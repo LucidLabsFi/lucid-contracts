@@ -1,0 +1,27 @@
+{
+  "name": "hardhat-project",
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "ethers": "^5.7.2",
+    "hardhat": "^2.17.1",
+    "hardhat-contract-sizer": "^2.10.0"
+  },
+  "dependencies": {
+    "@chainlink/contracts-ccip": "^1.4.0",
+    "@chainlink/local": "^0.1.0",
+    "@layerzerolabs/lz-evm-protocol-v2": "^2.3.29",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@nomicfoundation/hardhat-verify": "^1.1.1",
+    "@openzeppelin/contracts": "^4.9.3",
+    "@openzeppelin/contracts-upgradeable": "^4.9.3",
+    "@openzeppelin/hardhat-upgrades": "^1.28.0",
+    "@safe-global/protocol-kit": "^1.2.0",
+    "@safe-global/safe-core-sdk-types": "^2.2.0",
+    "@uniswap/v2-core": "^1.0.1",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "dotenv": "^16.3.1",
+    "hardhat-change-network": "github:dmihal/hardhat-change-network#pull/4/head",
+    "solidity-bytes-utils": "^0.8.2",
+    "solmate": "^6.6.1"
+  }
+}
