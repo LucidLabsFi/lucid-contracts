@@ -36,7 +36,8 @@ contract BondFixedTermSDA is BondBaseSDA {
 
         // Check that the vesting parameter is valid for a fixed-term market
         if (params.vesting != 0 && (params.vesting < 1 days || params.vesting > MAX_FIXED_TERM)) revert Auctioneer_InvalidParams();
-
+        if (params.vesting == 0 && (params.linearDuration > MAX_FIXED_TERM || params.linearDuration < MIN_LINEAR_DURATION))
+            revert Auctioneer_InvalidParams();
         // Create market and return market ID
         return _createMarket(params);
     }

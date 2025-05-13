@@ -28,6 +28,7 @@ interface IBondSDA is IBondAuctioneer {
         uint48 start; // timestamp when market starts
         uint48 conclusion; // timestamp when market no longer offered
         uint48 vesting; // length of time from deposit to expiry if fixed-term, vesting timestamp if fixed-expiry
+        uint48 linearDuration; // duration of linear vesting
     }
 
     /// @notice Data needed for tuning bond market
@@ -89,7 +90,8 @@ interface IBondSDA is IBondAuctioneer {
     /// @dev                        If start time is not provided (i.e. 0), the market will start immediately.
     /// @dev                    10. Market Duration (seconds) - Duration of the market in seconds.
     /// @dev                    11. Deposit interval (seconds)
-    /// @dev                    12. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
+    /// @dev                    12. Is fixed term ? Linear vesting duration (seconds) : Linear expiry (timestamp), 0 for non-linear vesting.
+    /// @dev                    13. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
     /// @dev                        Should be calculated as: (payoutDecimals - quoteDecimals) - ((payoutPriceDecimals - quotePriceDecimals) / 2)
     /// @dev                        Providing a scaling factor adjustment that doesn't follow this formula could lead to under or overflow errors in the market.
     /// @return                 ID of new bond market
@@ -106,6 +108,7 @@ interface IBondSDA is IBondAuctioneer {
         uint48 start;
         uint32 duration;
         uint32 depositInterval;
+        uint48 linearDuration;
         int8 scaleAdjustment;
     }
 

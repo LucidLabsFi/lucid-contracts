@@ -9,19 +9,19 @@ interface IBaseAdapter {
         address destController;
     }
 
-    /// @param chainId The chain ID to check.
-    /// @return bool True if the chain ID is supported, false otherwise.
-    function isChainIdSupported(uint256 chainId) external view returns (bool);
-
     /// @param destChainId The destination chain ID.
     /// @param destination The destination address.
-    /// @param refundAddress The address to refund any unused gas fees.
+    /// @param options Additional options to be used by the adapter.
     /// @param message The message data to be relayed.
     /// @return transferId The transfer ID of the relayed message.
     function relayMessage(
         uint256 destChainId,
         address destination,
-        address refundAddress,
-        bytes memory message
+        bytes memory options,
+        bytes calldata message
     ) external payable returns (bytes32 transferId);
+
+    /// @param chainId The chain ID to check.
+    /// @return bool True if the chain ID is supported, false otherwise.
+    function isChainIdSupported(uint256 chainId) external view returns (bool);
 }

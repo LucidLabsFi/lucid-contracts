@@ -211,14 +211,14 @@ contract BondAggregator is IBondAggregator, Auth {
 
         uint256 highestOut;
         uint256 id = type(uint256).max; // set to max so an empty set doesn't return 0, the first index
-        uint48 vesting;
+        uint48[3] memory vestTerms;
         uint256 maxPayout;
         IBondAuctioneer auctioneer;
         for (uint256 i; i < len; ++i) {
             auctioneer = marketsToAuctioneers[ids[i]];
-            (, , , , vesting, maxPayout) = auctioneer.getMarketInfoForPurchase(ids[i]);
+            (, , , , vestTerms, maxPayout) = auctioneer.getMarketInfoForPurchase(ids[i]);
 
-            uint256 expiry = (vesting <= MAX_FIXED_TERM) ? block.timestamp + vesting : vesting;
+            uint256 expiry = (vestTerms[0] <= MAX_FIXED_TERM) ? block.timestamp + vestTerms[0] : vestTerms[0];
 
             if (expiry <= maxExpiry_) {
                 if (minAmountOut_ <= maxPayout) {

@@ -45,6 +45,10 @@ contract BondFixedExpirySDA is BondBaseSDA {
 
         // Check that the vesting parameter is valid for a fixed-expiry market
         if (params.vesting != 0 && params.vesting < conclusion) revert Auctioneer_InvalidParams();
+        // Check that linear duration is valid for a fixed-expiry linear vesting market
+        if (params.vesting == 0 && (start >= params.linearDuration)) revert Auctioneer_InvalidParams();
+        if (params.vesting == 0 && ((params.linearDuration - start) < MIN_LINEAR_DURATION)) revert Auctioneer_InvalidParams();
+        if (params.vesting == 0 && (params.linearDuration <= conclusion)) revert Auctioneer_InvalidParams();
 
         // Create market with provided params
         uint256 marketId = _createMarket(params);

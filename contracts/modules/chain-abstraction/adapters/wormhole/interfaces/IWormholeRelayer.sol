@@ -18,6 +18,8 @@ interface IWormholeRelayer {
      * @param receiverValue msg.value that delivery provider should pass in for call to `targetAddress` (in targetChain currency units)
      * @param gasLimit gas limit with which to call `targetAddress`. Any units of gas unused will be refunded according to the
      *        `targetChainRefundPerGasUnused` rate quoted by the delivery provider
+     * @param refundChain The chain to deliver any refund to, in Wormhole Chain ID format
+     * @param refundAddress The address on `refundChain` to deliver any refund to
      * @return sequence sequence number of published VAA containing delivery instructions
      */
     function sendPayloadToEvm(
@@ -25,7 +27,9 @@ interface IWormholeRelayer {
         address targetAddress,
         bytes memory payload,
         uint256 receiverValue,
-        uint256 gasLimit
+        uint256 gasLimit,
+        uint16 refundChain,
+        address refundAddress
     ) external payable returns (uint64 sequence);
 
     /**

@@ -6,10 +6,7 @@ import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 import {BaseAssetBridge} from "./BaseAssetBridge.sol";
 import {IBaseAdapter} from "./adapters/interfaces/IBaseAdapter.sol";
 import {IController} from "./interfaces/IController.sol";
-import {IRegistry} from "./interfaces/IRegistry.sol";
 import {IFeeCollector} from "./interfaces/IFeeCollector.sol";
-import {IXERC20} from "../../tokens/ERC20/interfaces/IXERC20.sol";
-import {IXERC20Lockbox} from "../../tokens/ERC20/interfaces/IXERC20Lockbox.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
@@ -17,6 +14,63 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @notice This contract is responsible for managing the minting and burning of a specified token across different chains, using a single or multiple bridge adapters.
  */
 contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IController {
+    /// @notice Event emitted when the token unwrapping setting is changed.
+    event AllowTokenUnwrappingSet(bool allowUnwrapping);
+
+    /// @notice Event emitted when an asset mint message is sent to another chain.
+    /// @param transferId The unique identifier of the transfer.
+    /// @param destChainId The destination chain ID.
+    /// @param threshold The number of bridges required to relay the asset.
+    /// @param sender The address of the sender.
+    /// @param recipient The address of the recipient.
+    /// @param amount The amount of the asset.
+    event TransferCreated(
+        bytes32 indexed transferId,
+        uint256 indexed destChainId,
+        uint256 threshold,
+        address indexed sender,
+        address recipient,
+        uint256 amount,
+        bool unwrap
+    );
+
+    /// @notice Event emitted when a transfer can now be executed.
+    /// @param transferId The unique identifier of the transfer.
+    event TransferExecutable(bytes32 indexed transferId);
+
+    /// @notice Event emitted when an asset is minted on the current chain.
+    /// @param transferId The unique identifier of the transfer.
+    event TransferExecuted(bytes32 indexed transferId);
+
+    /// @notice Event emitted when a transfer is resent.
+    /// @param transferId The unique identifier of the transfer.
+    event TransferResent(bytes32 indexed transferId);
+
+    /// @notice Event emitted when an asset mint message is sent to another chain via a bridgeAdapter.
+    /// @param transferId The unique identifier of the transfer.
+    /// @param bridgeAdapter The address of the bridge adapter.
+    event TransferRelayed(bytes32 indexed transferId, address bridgeAdapter);
+
+    /// @notice Event emitted when an asset is received from another chain.
+    /// @param transferId The unique identifier of the transfer.
+    /// @param originChainId The chain id of the origin chain.
+    /// @param bridgeAdapter The address of the bridge adapter that sent the message.
+    event TransferReceived(bytes32 indexed transferId, uint256 originChainId, address bridgeAdapter);
+
+    /// @notice Event emitted when the minimum number of bridges required to relay an asset for multi-bridge transfers is set.
+    /// @param minBridges The minimum number of bridges required.
+    event MinBridgesSet(uint256 minBridges);
+
+    /// @notice Event emitted when bridge adapters that can be used for multi-bridge transfers, bypassing the limits have been set
+    /// @param adapter The address of the bridge adapter.
+    /// @param enabled The status of the adapter.
+    event MultiBridgeAdapterSet(address indexed adapter, bool enabled);
+
+    /// @notice Event emitted when the controller address for a chain is set.
+    /// @param controller The address of the controller.
+    /// @param chainId The chain ID.
+    event ControllerForChainSet(address indexed controller, uint256 chainId);
+
     /// @notice Error thrown when an asset controller is not deployed/supported on the other chain
     error Controller_Chain_Not_Supported();
 
@@ -50,51 +104,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @notice Error thrown when an adapter resends a transfer that has already been delivered
     error Controller_TransferResentByAadapter();
 
-    /// @notice Event emitted when an asset mint message is sent to another chain.
-    /// @param transferId The unique identifier of the transfer.
-    /// @param destChainId The destination chain ID.
-    /// @param threshold The number of bridges required to relay the asset.
-    /// @param sender The address of the sender.
-    /// @param recipient The address of the recipient.
-    /// @param amount The amount of the asset.
-    event TransferCreated(bytes32 transferId, uint256 destChainId, uint256 threshold, address sender, address recipient, uint256 amount, bool unwrap);
+    /// @notice Error thrown when the mint function call on the token fails
+    error Controller_TokenMintFailed();
 
-    /// @notice Event emitted when a transfer can now be executed.
-    /// @param transferId The unique identifier of the transfer.
-    event TransferExecutable(bytes32 transferId);
-
-    /// @notice Event emitted when an asset is minted on the current chain.
-    /// @param transferId The unique identifier of the transfer.
-    event TransferExecuted(bytes32 transferId);
-
-    /// @notice Event emitted when a transfer is resent.
-    /// @param transferId The unique identifier of the transfer.
-    event TransferResent(bytes32 transferId);
-
-    /// @notice Event emitted when an asset mint message is sent to another chain via a bridgeAdapter.
-    /// @param transferId The unique identifier of the transfer.
-    /// @param bridgeAdapter The address of the bridge adapter.
-    event TransferRelayed(bytes32 indexed transferId, address bridgeAdapter);
-
-    /// @notice Event emitted when an asset is received from another chain.
-    /// @param transferId The unique identifier of the transfer.
-    /// @param originChainId The chain id of the origin chain.
-    /// @param bridgeAdapter The address of the bridge adapter that sent the message.
-    event TransferReceived(bytes32 transferId, uint256 originChainId, address bridgeAdapter);
-
-    /// @notice Event emitted when the minimum number of bridges required to relay an asset for multi-bridge transfers is set.
-    /// @param minBridges The minimum number of bridges required.
-    event MinBridgesSet(uint256 minBridges);
-
-    /// @notice Event emitted when bridge adapters that can be used for multi-bridge transfers, bypassing the limits have been set
-    /// @param adapter The address of the bridge adapter.
-    /// @param enabled The status of the adapter.
-    event MultiBridgeAdapterSet(address indexed adapter, bool enabled);
-
-    /// @notice Event emitted when the controller address for a chain is set.
-    /// @param controller The address of the controller.
-    /// @param chainId The chain ID.
-    event ControllerForChainSet(address indexed controller, uint256 chainId);
+    /// @notice Error thrown when the burn function call on the token fails
+    error Controller_TokenBurnFailed();
 
     /// @notice Struct representing a bridged asset.
     /// @dev This struct holds the details of a message to be relayed to another chain.
@@ -122,7 +136,19 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     IFeeCollector public immutable feeCollector;
 
     /// @dev The local token address that is being bridged.
-    address public immutable token;
+    address public token;
+
+    /// @dev Allow XERC20 incoming token transfers to be unwrapped into the native token using the lockbox.
+    bool public allowTokenUnwrapping;
+
+    /// @notice The function selector for the burn(uint256) function on the token.
+    bytes4 public constant BURN_SELECTOR_SINGLE = bytes4(keccak256(bytes("burn(uint256)"))); // 0x42966c68
+
+    /// @notice The function selector for the mint function on the token.
+    bytes4 public immutable MINT_SELECTOR;
+
+    /// @notice The function selector for the burn function on the token.
+    bytes4 public immutable BURN_SELECTOR;
 
     /// @dev The minimum number of bridges required to relay an asset for multi-bridge transfers.
     uint256 public minBridges;
@@ -153,18 +179,19 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /**
      * @notice Initializes the contract with the given parameters.
      * @notice To configure multibridge limits, use the zero address as a bridge in `_bridges` and set the limits accordingly.
-     * @param _addresses An array with two elements, containing the token address and the token owner address respectively.
-     * @param _duration The duration it takes for the limits to fully replenish
+     * @param _addresses An array with four elements, containing the token address, the user that gets DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the user getting only PAUSE_ROLE,
+     *          the fee collector contract, the controller address in other chains for the given chain IDs (if deployed with create3).
+     * @param _duration The duration it takes for the limits to fully replenish.
      * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Setting to 0 will disable multi-bridge transfers.
      * @param _multiBridgeAdapters The addresses of the initial bridge adapters that can be used for multi-bridge transfers, bypassing the limits.
      * @param _chainId The list of chain IDs to set the controller addresses for.
      * @param _bridges The list of bridge adapter addresses that have limits set for minting and burning.
-     * @param _mintingLimits The list of minting limits for the bridge adapters.
-     * @param _burningLimits The list of burning limits for the bridge adapters.
-     * @param _controllerAddress The address of other asset controller addresses in other chains for the given chain IDs (if deployed with create3) - optional.
+     * @param _mintingLimits The list of minting limits for the bridge adapters. It must correspond to the mint() function of the token, otherwise tokens cannot be minted
+     * @param _burningLimits The list of burning limits for the bridge adapters. It must correspond to the burn() function of the token, otherwise tokens cannot be burned
+     * @param _selectors Bytes4 array of mint and burn function selectors.
      */
     constructor(
-        address[3] memory _addresses, //token, initialOwner, feeCollector
+        address[5] memory _addresses, //token, initialOwner, pauser, feeCollector, controllerAddress
         uint256 _duration,
         uint256 _minBridges,
         address[] memory _multiBridgeAdapters,
@@ -172,11 +199,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         address[] memory _bridges,
         uint256[] memory _mintingLimits,
         uint256[] memory _burningLimits,
-        address _controllerAddress
-    ) BaseAssetBridge(_addresses[1], _duration, _bridges, _mintingLimits, _burningLimits) {
-        if ((_addresses[0] == address(0)) || (_addresses[2] == address(0))) revert Controller_Invalid_Params();
+        bytes4[2] memory _selectors
+    ) BaseAssetBridge(_addresses[1], _addresses[2], _duration, _bridges, _mintingLimits, _burningLimits) {
+        if ((_addresses[0] == address(0)) || (_addresses[3] == address(0))) revert Controller_Invalid_Params();
         token = _addresses[0];
-        feeCollector = IFeeCollector(_addresses[2]);
+        feeCollector = IFeeCollector(_addresses[3]);
         minBridges = _minBridges;
         emit MinBridgesSet(_minBridges);
         if (_multiBridgeAdapters.length > 0) {
@@ -186,12 +213,17 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             }
         }
 
-        if (_controllerAddress != address(0)) {
+        if (_addresses[4] != address(0)) {
             for (uint256 i = 0; i < _chainId.length; i++) {
-                _controllerForChain[_chainId[i]] = _controllerAddress;
-                emit ControllerForChainSet(_controllerAddress, _chainId[i]);
+                _controllerForChain[_chainId[i]] = _addresses[4];
+                emit ControllerForChainSet(_addresses[4], _chainId[i]);
             }
         }
+        allowTokenUnwrapping = false;
+        emit AllowTokenUnwrappingSet(false);
+
+        MINT_SELECTOR = _selectors[0];
+        BURN_SELECTOR = _selectors[1];
     }
 
     /* ========== PUBLIC ========== */
@@ -201,22 +233,23 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @dev msg.value should contain the bridge adapter fee
      * @param recipient The address of the recipient. Could be the same as msg.sender.
      * @param amount The amount of the asset to mint.
-     * @param unwrap Whether to unwrap the native asset using the lockbox. Lockbox must be set in the destination chain, holding enough liquidity
+     * @param unwrap Applicable only to XERC20 transfers. Used to unwrap the native asset using the lockbox on destination, if enabled on the destination.
      * @param destChainId The destination chain ID.
      * @param bridgeAdapter The address of the bridge adapter.
+     * @param bridgeOptions Additional params to be used by the adapter.
      */
-    function burnAndBridge(
+    function transferTo(
         address recipient,
         uint256 amount,
         bool unwrap,
         uint256 destChainId,
-        address bridgeAdapter
+        address bridgeAdapter,
+        bytes memory bridgeOptions
     ) public payable nonReentrant whenNotPaused {
         if (amount == 0) revert Controller_ZeroAmount();
-        uint256 _currentLimit = burningCurrentLimitOf(bridgeAdapter);
-        if (_currentLimit < amount) revert IXERC20_NotHighEnoughLimits();
+        if (burningCurrentLimitOf(bridgeAdapter) < amount) revert Controller_NotHighEnoughLimits();
         _useBurnerLimits(bridgeAdapter, amount);
-        IXERC20(token).burn(_msgSender(), amount);
+        _burn(_msgSender(), amount);
 
         if (recipient == address(0)) revert Controller_Invalid_Params();
         if (getControllerForChain(destChainId) == address(0)) revert Controller_Chain_Not_Supported();
@@ -229,7 +262,12 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         Transfer memory transfer = Transfer(recipient, amount, unwrap, 1, transferId);
         _relayedTransfers[transferId] = transfer;
 
-        IBaseAdapter(bridgeAdapter).relayMessage{value: msg.value}(destChainId, getControllerForChain(destChainId), msg.sender, abi.encode(transfer));
+        IBaseAdapter(bridgeAdapter).relayMessage{value: msg.value}(
+            destChainId,
+            getControllerForChain(destChainId),
+            bridgeOptions,
+            abi.encode(transfer)
+        );
         emit TransferCreated(transferId, destChainId, 1, _msgSender(), recipient, amount, unwrap);
         emit TransferRelayed(transferId, bridgeAdapter);
     }
@@ -240,17 +278,18 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @dev msg.value should contain the bridge adapter fee
      * @param transferId The unique identifier of the transfer.
      * @param adapter The address of the bridge adapter.
+     * @param options Additional params to be used by the adapter.
      */
-    function resendTransfer(bytes32 transferId, address adapter) public payable nonReentrant whenNotPaused {
+    function resendTransfer(bytes32 transferId, address adapter, bytes memory options) public payable nonReentrant whenNotPaused {
         uint256 destChainId = _destChainForMessage[transferId];
         if (destChainId == 0) revert Controller_UnknownTransfer();
         Transfer memory transfer = _relayedTransfers[transferId];
         if (transfer.threshold == 1) {
             uint256 _currentLimit = burningCurrentLimitOf(adapter);
-            if (_currentLimit < transfer.amount) revert IXERC20_NotHighEnoughLimits();
-            // Resend doesn't uses the burn limits, since the asset is already burned, but it checks if there is a limit overall meaning the bridge adapter is enabled
+            if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
+            // Resend doesn't consume burn limits, since the asset is already burned, but it checks if the bridge adapter is enabled
 
-            IBaseAdapter(adapter).relayMessage{value: msg.value}(destChainId, getControllerForChain(destChainId), msg.sender, abi.encode(transfer));
+            IBaseAdapter(adapter).relayMessage{value: msg.value}(destChainId, getControllerForChain(destChainId), options, abi.encode(transfer));
             emit TransferResent(transferId);
             emit TransferRelayed(transferId, adapter);
         } else {
@@ -265,18 +304,20 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @dev Token allowance must be given before calling this function, which should include the multi-bridge fee, if any.
      * @param recipient The address of the recipient. Could be the same as msg.sender.
      * @param amount The amount of the asset to mint.
-     * @param unwrap Whether to unwrap the native asset using the lockbox. Lockbox must be set in the destination chain, holding enough liquidity
+     * @param unwrap Applicable only to XERC20 transfers. Used to unwrap the native asset using the lockbox on destination, if enabled on the destination.
      * @param destChainId The destination chain ID.
      * @param adapters The addresses of the bridge adapters.
      * @param fees The fees to be paid to the bridge adapters.
+     * @param options Additional params to be used by the adapter.
      */
-    function burnAndBridgeMulti(
+    function transferTo(
         address recipient,
         uint256 amount,
         bool unwrap,
         uint256 destChainId,
         address[] memory adapters,
-        uint256[] memory fees
+        uint256[] memory fees,
+        bytes[] memory options
     ) public payable nonReentrant whenNotPaused {
         if (amount == 0) revert Controller_ZeroAmount();
         // Fee collection for multi-bridge transfers
@@ -286,13 +327,13 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             IERC20(token).approve(address(feeCollector), fee);
             feeCollector.collect(token, fee);
         }
-        IXERC20(token).burn(_msgSender(), amount);
+        _burn(_msgSender(), amount);
 
         uint256 _currentLimit = burningCurrentLimitOf(address(0));
-        if (_currentLimit < amount) revert IXERC20_NotHighEnoughLimits();
+        if (_currentLimit < amount) revert Controller_NotHighEnoughLimits();
         _useBurnerLimits(address(0), amount);
 
-        checkUniqueness(adapters);
+        _checkUniqueness(adapters);
 
         // Revert if threshold is higher than the number of adapters that will execute the message
         if (adapters.length < minBridges) revert Controller_Invalid_Params();
@@ -309,7 +350,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         _destChainForMessage[transferId] = destChainId;
         _relayedTransfers[transferId] = transfer;
 
-        _relayTransfer(transfer, destChainId, adapters, fees, msg.value);
+        _relayTransfer(transfer, destChainId, adapters, fees, options, msg.value);
         emit TransferCreated(transferId, destChainId, minBridges, _msgSender(), recipient, amount, unwrap);
     }
 
@@ -319,50 +360,28 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param transferId The unique identifier of the transfer.
      * @param adapters The addresses of the bridge adapters.
      * @param fees The fees to be paid to the bridge adapters.
+     * @param options Additional params to be used by the adapter.
      */
-    function resendTransferMulti(bytes32 transferId, address[] memory adapters, uint256[] memory fees) public payable nonReentrant whenNotPaused {
+    function resendTransfer(
+        bytes32 transferId,
+        address[] memory adapters,
+        uint256[] memory fees,
+        bytes[] memory options
+    ) public payable nonReentrant whenNotPaused {
         uint256 destChainId = _destChainForMessage[transferId];
         if (destChainId == 0) revert Controller_UnknownTransfer();
         if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
-        checkUniqueness(adapters);
+        _checkUniqueness(adapters);
         Transfer memory transfer = _relayedTransfers[transferId];
         // Resend doesn't uses the burn limits, since the asset is already burned and limits are global for all whitelisted multibridge adapters
         if (transfer.threshold > 1) {
             if (adapters.length != fees.length) revert Controller_Invalid_Params();
 
-            _relayTransfer(transfer, destChainId, adapters, fees, msg.value);
+            _relayTransfer(transfer, destChainId, adapters, fees, options, msg.value);
             emit TransferResent(transferId);
         } else {
             revert Controller_Invalid_Params();
         }
-    }
-
-    /**
-     * @notice Relays a message to another chain.
-     * @notice Msg.sender will receive any refunds from excess fees paid by the bridge, if the bridge supports it.
-     * @param transfer The Transfer struct with the transfer data.
-     * @param destChainId The destination chain ID.
-     * @param adapters The list of adapter addresses.
-     * @param fees The list of fees for each adapter.
-     * @param totalFees The msg.value passed to the function that should cover the sum of all the fees. Will revert if sum of fees is not equal to totalFees.
-     */
-    function _relayTransfer(
-        Transfer memory transfer,
-        uint256 destChainId,
-        address[] memory adapters,
-        uint256[] memory fees,
-        uint256 totalFees
-    ) internal {
-        if (adapters.length != fees.length) revert Controller_Invalid_Params();
-        uint256 fee;
-        for (uint256 i = 0; i < adapters.length; i++) {
-            // Check that provided bridges are whitelisted
-            if (multiBridgeAdapters[adapters[i]] == false) revert Controller_AdapterNotSupported();
-            IBaseAdapter(adapters[i]).relayMessage{value: fees[i]}(destChainId, getControllerForChain(destChainId), msg.sender, abi.encode(transfer));
-            emit TransferRelayed(transfer.transferId, adapters[i]);
-            fee += fees[i];
-        }
-        if (fee != totalFees) revert Controller_FeesSumMismatch();
     }
 
     /**
@@ -395,10 +414,10 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
             // Get limit of bridge
             uint256 _currentLimit = mintingCurrentLimitOf(msg.sender);
-            if (_currentLimit < transfer.amount) revert IXERC20_NotHighEnoughLimits();
+            if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
             _useMinterLimits(msg.sender, transfer.amount);
 
-            if (transfer.unwrap) {
+            if (transfer.unwrap && allowTokenUnwrapping) {
                 _unwrapAndMint(transfer.recipient, transfer.amount);
             } else {
                 _mint(transfer.recipient, transfer.amount);
@@ -444,11 +463,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         if (transfer.executed) revert Controller_TransferNotExecutable();
         if (transfer.receivedSoFar < transfer.threshold) revert Controller_ThresholdNotMet();
         uint256 _currentLimit = mintingCurrentLimitOf(address(0));
-        if (_currentLimit < transfer.amount) revert IXERC20_NotHighEnoughLimits();
+        if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
         _useMinterLimits(address(0), transfer.amount);
         transfer.executed = true;
 
-        if (transfer.unwrap) {
+        if (transfer.unwrap && allowTokenUnwrapping) {
             _unwrapAndMint(transfer.recipient, transfer.amount);
         } else {
             _mint(transfer.recipient, transfer.amount);
@@ -478,6 +497,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     }
 
     /* ========== ADMIN ========== */
+
+    function setTokenUnwrapping(bool _allowUnwrapping) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        allowTokenUnwrapping = _allowUnwrapping;
+        emit AllowTokenUnwrappingSet(_allowUnwrapping);
+    }
 
     /**
      * @notice Sets the controller addresses for the given chain IDs.
@@ -527,6 +551,69 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
     /* ========== INTERNAL ========== */
 
+    /**
+     * @notice Mints the asset to the recipient address, using the MINT_SELECTOR.
+     * @param recipient The address of the recipient.
+     * @param amount The amount of the asset to mint.
+     */
+    function _mint(address recipient, uint256 amount) internal virtual {
+        (bool success, ) = token.call(abi.encodeWithSelector(MINT_SELECTOR, recipient, amount));
+        if (!success) revert Controller_TokenMintFailed();
+    }
+
+    /**
+     * @notice Burns the asset from the account address, using the burnSelector.
+     * @param account The address of the account to burn from.
+     * @param amount The amount of the asset to burn.
+     */
+    function _burn(address account, uint256 amount) internal virtual {
+        uint256 balance = IERC20(token).balanceOf(account);
+        bool success;
+        if (BURN_SELECTOR == BURN_SELECTOR_SINGLE) {
+            // burn(uint256) implementations expect msg.sender to hold the tokens
+            IERC20(token).transferFrom(account, address(this), amount);
+            (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, amount));
+        } else {
+            (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, account, amount));
+        }
+        uint256 newBalance = IERC20(token).balanceOf(account);
+        if (!success || (newBalance != balance - amount)) revert Controller_TokenBurnFailed();
+    }
+
+    /**
+     * @notice Relays a message to another chain.
+     * @notice Msg.sender will receive any refunds from excess fees paid by the bridge, if the bridge supports it.
+     * @param transfer The Transfer struct with the transfer data.
+     * @param destChainId The destination chain ID.
+     * @param adapters The list of adapter addresses.
+     * @param fees The list of fees for each adapter.
+     * @param totalFees The msg.value passed to the function that should cover the sum of all the fees. Will revert if sum of fees is not equal to totalFees.
+     */
+    function _relayTransfer(
+        Transfer memory transfer,
+        uint256 destChainId,
+        address[] memory adapters,
+        uint256[] memory fees,
+        bytes[] memory options,
+        uint256 totalFees
+    ) internal {
+        if ((adapters.length != fees.length) || (adapters.length != options.length)) revert Controller_Invalid_Params();
+        uint256 fee;
+        for (uint256 i = 0; i < adapters.length; i++) {
+            // Check that provided bridges are whitelisted
+            if (multiBridgeAdapters[adapters[i]] == false) revert Controller_AdapterNotSupported();
+            IBaseAdapter(adapters[i]).relayMessage{value: fees[i]}(destChainId, getControllerForChain(destChainId), options[i], abi.encode(transfer));
+            emit TransferRelayed(transfer.transferId, adapters[i]);
+            fee += fees[i];
+        }
+        if (fee != totalFees) revert Controller_FeesSumMismatch();
+    }
+
+    /**
+     * @notice Sets the controller addresses for the given chain IDs.
+     * @param chainId The list of chain IDs.
+     * @param controller The list of controller addresses.
+     */
     function _setControllerForChain(uint256[] memory chainId, address[] memory controller) internal {
         if (chainId.length != controller.length) revert Controller_Invalid_Params();
         for (uint256 i = 0; i < chainId.length; i++) {
@@ -535,21 +622,74 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         }
     }
 
-    function _unwrapAndMint(address recipient, uint256 amount) internal {
-        address lockbox = IXERC20(token).lockbox();
-        if (lockbox == address(0)) {
-            // asset cannot be unwrapped, mint tokens directly
-            _mint(recipient, amount);
-        } else {
-            // unwrap asset
-            _mint(address(this), amount);
-            IERC20(token).approve(lockbox, amount);
-            IXERC20Lockbox(lockbox).withdrawTo(recipient, amount);
+    /**
+     * @notice If there is a XERC20Lockbox set in the token, unwrap the asset and send it to the recipient. If not, mint the tokens directly.
+     * @dev Checks that all external calls will succeed, otherwise it returns the tokens to the user.
+     * @param recipient The address of the recipient.
+     * @param amount The amount of the asset to unwrap and mint.
+     */
+    function _unwrapAndMint(address recipient, uint256 amount) internal virtual {
+        // Try to get the lockbox address from the token
+        (bool success, bytes memory data) = token.call(abi.encodeWithSignature("lockbox()"));
+
+        // Check if lockbox call was successful and returned data
+        if (success && data.length != 0) {
+            address lockbox = abi.decode(data, (address));
+
+            // Only attempt unwrapping if lockbox exists
+            if (lockbox != address(0)) {
+                // Store initial balance to calculate exact amount after minting
+                uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+
+                // Mint tokens to this contract
+                _mint(address(this), amount);
+
+                // Calculate exact amount received (accounts for potential taxes/fees)
+                uint256 amountToUnwrap = IERC20(token).balanceOf(address(this)) - balanceBefore;
+
+                // Get the underlying token address from lockbox
+                (bool addrRetrSuccess, bytes memory underlying) = lockbox.call(abi.encodeWithSignature("ERC20()"));
+
+                // Approve tokens for unwrapping
+                (success, ) = token.call(abi.encodeWithSignature("approve(address,uint256)", lockbox, amountToUnwrap));
+
+                // If approval failed or underlying token retrieval failed or allowance is insufficient
+                if (!success || !addrRetrSuccess || IERC20(token).allowance(address(this), lockbox) < amountToUnwrap) {
+                    // Transfer tokens directly to recipient without unwrapping
+                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    return;
+                }
+
+                // Decode underlying token address
+                address underlyingToken = abi.decode(underlying, (address));
+
+                // If underlying token is address(0), can't unwrap
+                if (underlyingToken == address(0)) {
+                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    return;
+                }
+
+                // Try to withdraw/unwrap tokens
+                (success, ) = lockbox.call(abi.encodeWithSignature("withdraw(uint256)", amountToUnwrap));
+
+                // If withdrawal failed, send the wrapped tokens directly
+                if (!success) {
+                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    return;
+                }
+
+                // Transfer unwrapped/underlying tokens to recipient
+                IERC20(underlyingToken).transfer(recipient, amountToUnwrap);
+                return;
+            }
         }
+
+        // If lockbox doesn't exist or can't be used, mint tokens directly to recipient
+        _mint(recipient, amount);
     }
 
     /// @dev Execution will revert if there is a duplicate adapter in the array
-    function checkUniqueness(address[] memory adapters) internal pure {
+    function _checkUniqueness(address[] memory adapters) internal pure {
         uint256 length = adapters.length;
         for (uint256 i = 0; i < length - 1; i++) {
             for (uint256 j = i + 1; j < length; j++) {
@@ -557,10 +697,6 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
                 if (adapters[i] == adapters[j]) revert Controller_DuplicateAdapter();
             }
         }
-    }
-
-    function _mint(address _recipient, uint256 _amount) internal {
-        IXERC20(token).mint(_recipient, _amount);
     }
 
     ///@dev Fallback function to receive ether from bridge refunds

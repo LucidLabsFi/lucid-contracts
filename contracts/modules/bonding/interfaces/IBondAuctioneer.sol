@@ -23,11 +23,7 @@ interface IBondAuctioneer {
     /// @param amount_          Amount to deposit in exchange for bond (after fee has been deducted)
     /// @param minAmountOut_    Minimum acceptable amount of bond to receive. Prevents frontrunning
     /// @return payout          Amount of payout token to be received from the bond
-    function purchaseBond(
-        uint256 id_,
-        uint256 amount_,
-        uint256 minAmountOut_
-    ) external returns (uint256 payout);
+    function purchaseBond(uint256 id_, uint256 amount_, uint256 minAmountOut_) external returns (uint256 payout);
 
     /// @notice                         Set market intervals to different values than the defaults
     /// @notice                         Must be market owner
@@ -86,9 +82,11 @@ interface IBondAuctioneer {
     /// @return callbackAddr    Address of the callback contract to get tokens for payouts
     /// @return payoutToken     Payout Token (token paid out) for the Market
     /// @return quoteToken      Quote Token (token received) for the Market
-    /// @return vesting         Timestamp or duration for vesting, implementation-dependent
+    /// @return vestTerms       Array of vesting terms //vesting, start, linearDuration
     /// @return maxPayout       Maximum amount of payout tokens you can purchase in one transaction
-    function getMarketInfoForPurchase(uint256 id_)
+    function getMarketInfoForPurchase(
+        uint256 id_
+    )
         external
         view
         returns (
@@ -96,7 +94,7 @@ interface IBondAuctioneer {
             address callbackAddr,
             ERC20 payoutToken,
             ERC20 quoteToken,
-            uint48 vesting,
+            uint48[3] memory vestTerms, //vesting, start, linearDuration
             uint256 maxPayout
         );
 
@@ -119,11 +117,7 @@ interface IBondAuctioneer {
     /// @param referrer_    Address of referrer, used to get fees to calculate accurate payout amount.
     ///                     Inputting the zero address will take into account just the protocol fee.
     /// @return             amount of payout tokens to be paid
-    function payoutFor(
-        uint256 amount_,
-        uint256 id_,
-        address referrer_
-    ) external view returns (uint256);
+    function payoutFor(uint256 amount_, uint256 id_, address referrer_) external view returns (uint256);
 
     /// @notice             Returns maximum amount of quote token accepted by the market
     /// @param id_          ID of market

@@ -53,13 +53,16 @@ contract BondFixedExpiryOFDA is BondBaseOFDA {
 
         // Check that the vesting parameter is valid for a fixed-expiry market
         if (params.vesting != 0 && params.vesting < conclusion) revert Auctioneer_InvalidParams();
+        // Check that linear duration is valid for a fixed-expiry linear vesting market
+        if (params.vesting == 0 && (start >= params.linearDuration)) revert Auctioneer_InvalidParams();
+        if (params.vesting == 0 && ((params.linearDuration - start) < MIN_LINEAR_DURATION)) revert Auctioneer_InvalidParams();
+        if (params.vesting == 0 && (params.linearDuration <= conclusion)) revert Auctioneer_InvalidParams();
 
         // Create market with provided params
         uint256 marketId = _createMarket(params);
 
         // Create bond token (ERC20 for fixed expiry) if not instant swap
-        if (params.vesting != 0)
-            IBondFixedExpiryTeller(address(_teller)).deploy(params.payoutToken, params.vesting);
+        if (params.vesting != 0) IBondFixedExpiryTeller(address(_teller)).deploy(params.payoutToken, params.vesting);
 
         // Return market ID
         return marketId;

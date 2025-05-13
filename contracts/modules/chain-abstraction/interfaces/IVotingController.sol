@@ -22,6 +22,7 @@ interface IVotingController {
 
     struct RelayParams {
         address adapter;
+        bytes options;
         uint256 chainId;
         address sourceToken;
         address destGovernor;

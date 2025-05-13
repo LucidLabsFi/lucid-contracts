@@ -10,6 +10,7 @@ import {IBondTeller} from "../interfaces/IBondTeller.sol";
 import {IBondCallback} from "../interfaces/IBondCallback.sol";
 import {IBondAggregator} from "../interfaces/IBondAggregator.sol";
 import {IBondAuctioneer} from "../interfaces/IBondAuctioneer.sol";
+import {IBondVesting} from "../interfaces/IBondVesting.sol";
 
 import {TransferHelper} from "../lib/TransferHelper.sol";
 import {FullMath} from "../lib/FullMath.sol";
@@ -46,15 +47,20 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     error Teller_InvalidParams();
 
     /* ========== EVENTS ========== */
-    event Bonded(uint256 indexed id, address indexed referrer, uint256 amount, uint256 payout);
+    event Bonded(uint256 indexed id, address indexed recipient, address indexed referrer, uint256 amount, uint256 payout);
+    event ProtocolFeeSet(uint48 fee);
+    event CreateFeeDiscountSet(uint48 discount);
+    event ReferrerFeeSet(address indexed referrer, uint48 fee);
+    event ProtocolFeeForIssuerSet(address indexed issuer, uint48 fee);
+    event ProtocolFeeRecipientForIssuerSet(address indexed issuer, address indexed recipient);
 
     /* ========== STATE VARIABLES ========== */
 
-    /// @notice Fee paid to a front end operator in basis points (3 decimals). Set by the referrer, must be less than or equal to 5% (5e3).
+    /// @notice Fee paid to the referrer in basis points (3 decimals). Set by the guardian, must be less than or equal to 25% (25e3).
     /// @dev There are some situations where the fees may round down to zero if quantity of baseToken
     ///      is < 1e5 wei (can happen with big price differences on small decimal tokens). This is purely
     ///      a theoretical edge case, as the bond amount would not be practical.
-    mapping(address => uint48) public referrerFees;
+    uint48 public referrerFee;
 
     /// @notice Fee paid to protocol in basis points (3 decimal places).
     uint48 public protocolFee;
@@ -63,6 +69,10 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     uint48 public createFeeDiscount;
 
     uint48 public constant FEE_DECIMALS = 1e5; // one percent equals 1000.
+
+    mapping(address => uint48) private _protocolFeesForIssuers;
+
+    mapping(address => address) private _protocolFeeRecipients;
 
     /// @notice Fees earned by an address, by token
     mapping(address => mapping(ERC20 => uint256)) public rewards;
@@ -73,31 +83,58 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     // BondAggregator contract with utility functions
     IBondAggregator internal immutable _aggregator;
 
-    constructor(address protocol_, IBondAggregator aggregator_, address guardian_, Authority authority_) Auth(guardian_, authority_) {
+    ///@notice BondVesting contract that handles vesting schedules
+    IBondVesting public immutable bondVesting;
+
+    constructor(
+        address protocol_,
+        IBondAggregator aggregator_,
+        address guardian_,
+        Authority authority_,
+        IBondVesting vesting_
+    ) Auth(guardian_, authority_) {
         _protocol = protocol_;
         _aggregator = aggregator_;
+        bondVesting = vesting_;
 
         // Explicitly setting these values to zero to document
         protocolFee = 0;
         createFeeDiscount = 0;
+        emit ProtocolFeeSet(0);
+        emit CreateFeeDiscountSet(0);
     }
 
     /// @inheritdoc IBondTeller
-    function setReferrerFee(uint48 fee_) external override nonReentrant {
-        if (fee_ > 5e3) revert Teller_InvalidParams();
-        referrerFees[_msgSender()] = fee_;
+    function setReferrerFee(uint48 fee_) external override requiresAuth {
+        if ((fee_ > 25e3)) revert Teller_InvalidParams();
+        referrerFee = fee_;
     }
 
     /// @inheritdoc IBondTeller
     function setProtocolFee(uint48 fee_) external override requiresAuth {
-        if (fee_ > 5e3) revert Teller_InvalidParams();
+        if (fee_ > 25e3) revert Teller_InvalidParams();
         protocolFee = fee_;
+        emit ProtocolFeeSet(fee_);
     }
 
     /// @inheritdoc IBondTeller
     function setCreateFeeDiscount(uint48 discount_) external override requiresAuth {
         if (discount_ > protocolFee) revert Teller_InvalidParams();
         createFeeDiscount = discount_;
+        emit CreateFeeDiscountSet(discount_);
+    }
+
+    /// @inheritdoc IBondTeller
+    function setProtocolFeeForIssuer(address issuer_, uint48 fee_) external override requiresAuth {
+        if (fee_ > 25e3) revert Teller_InvalidParams();
+        _protocolFeesForIssuers[issuer_] = fee_;
+        emit ProtocolFeeForIssuerSet(issuer_, fee_);
+    }
+
+    /// @inheritdoc IBondTeller
+    function setProtocolFeeRecipientForIssuer(address issuer_, address recipient_) external override requiresAuth {
+        _protocolFeeRecipients[issuer_] = recipient_;
+        emit ProtocolFeeRecipientForIssuerSet(issuer_, recipient_);
     }
 
     /// @inheritdoc IBondTeller
@@ -115,8 +152,32 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     }
 
     /// @inheritdoc IBondTeller
-    function getFee(address referrer_) external view returns (uint48) {
-        return protocolFee + referrerFees[referrer_];
+    function getFee(address issuer_, address referrer_) external view returns (uint48) {
+        if (referrer_ == address(0)) {
+            return getProtocolFeeFor(issuer_);
+        } else {
+            return getProtocolFeeFor(issuer_) + referrerFee;
+        }
+    }
+
+    function getProtocolFeeFor(address _issuer) public view returns (uint48) {
+        uint48 issuerFee = _protocolFeesForIssuers[_issuer];
+        if (issuerFee != 0) {
+            return issuerFee;
+        } else {
+            // default to protocolFee if no issuer fee is set
+            return protocolFee;
+        }
+    }
+
+    function getProtocolFeeRecipientFor(address _issuer) public view returns (address) {
+        address recipient = _protocolFeeRecipients[_issuer];
+        if (recipient != address(0)) {
+            return recipient;
+        } else {
+            // default to protocol treasury address if no recipient address is set
+            return _protocol;
+        }
     }
 
     /* ========== USER FUNCTIONS ========== */
@@ -131,39 +192,42 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     ) external virtual nonReentrant returns (uint256, uint48) {
         ERC20 payoutToken;
         ERC20 quoteToken;
-        uint48 vesting;
-        uint256 payout;
+        uint48[3] memory vestTerms; //vesting, start, duration
 
         // Calculate fees for purchase
-        // 1. Calculate referrer fee
+        // 1. Calculate referrer fee (if there is a referrer)
         // 2. Calculate protocol fee as the total expected fee amount minus the referrer fee
         //    to avoid issues with rounding from separate fee calculations
-        uint256 toReferrer = amount_.mulDiv(referrerFees[referrer_], FEE_DECIMALS);
-        uint256 toProtocol = amount_.mulDiv(protocolFee + referrerFees[referrer_], FEE_DECIMALS) - toReferrer;
-
+        uint256[3] memory amounts; // [referrer fees, protocol fees, payout]
+        amounts[0] = (referrer_ == address(0)) ? 0 : amount_.mulDiv(referrerFee, FEE_DECIMALS);
+        address issuer;
         {
             IBondAuctioneer auctioneer = _aggregator.getAuctioneer(id_);
-            address owner;
-            (owner, , payoutToken, quoteToken, vesting, ) = auctioneer.getMarketInfoForPurchase(id_);
+
+            (issuer, , payoutToken, quoteToken, vestTerms, ) = auctioneer.getMarketInfoForPurchase(id_);
+
+            uint48 referrerFee_ = (referrer_ == address(0)) ? 0 : referrerFee;
+            // Calculate protocol fee for issuer
+            amounts[1] = amount_.mulDiv(getProtocolFeeFor(issuer) + referrerFee_, FEE_DECIMALS) - amounts[0];
 
             // Auctioneer handles bond pricing, capacity, and duration
-            uint256 amountLessFee = amount_ - toReferrer - toProtocol;
-            payout = auctioneer.purchaseBond(id_, amountLessFee, minAmountOut_);
+            uint256 amountLessFee = amount_ - amounts[0] - amounts[1];
+            amounts[2] = auctioneer.purchaseBond(id_, amountLessFee, minAmountOut_);
         }
 
         // Allocate fees to protocol and referrer
-        rewards[referrer_][quoteToken] += toReferrer;
-        rewards[_protocol][quoteToken] += toProtocol;
+        rewards[referrer_][quoteToken] += amounts[0];
+        rewards[getProtocolFeeRecipientFor(issuer)][quoteToken] += amounts[1];
 
         // Transfer quote tokens from sender and ensure enough payout tokens are available
-        _handleTransfers(id_, amount_, payout, toReferrer + toProtocol);
+        _handleTransfers(id_, amount_, amounts[2], amounts[0] + amounts[1]);
 
         // Handle payout to user (either transfer tokens if instant swap or issue bond token)
-        uint48 expiry = _handlePayout(recipient_, payout, payoutToken, vesting);
+        uint48 expiry = _handlePayout(recipient_, amounts[2], payoutToken, vestTerms);
 
-        emit Bonded(id_, referrer_, amount_, payout);
+        emit Bonded(id_, recipient_, referrer_, amount_, amounts[2]);
 
-        return (payout, expiry);
+        return (amounts[2], expiry);
     }
 
     /// @notice     Handles transfer of funds from user and market owner/callback
@@ -212,10 +276,14 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     /// @param recipient_   Address to receive payout
     /// @param payout_      Amount of payoutToken to be paid
     /// @param underlying_   Token to be paid out
-    /// @param vesting_     Time parameter for when the payout is available, could be a
-    ///                     timestamp or duration depending on the implementation
+    /// @param terms_       Terms of the bond market(vesting, start, linearDuration)
     /// @return expiry      Timestamp when the payout will vest
-    function _handlePayout(address recipient_, uint256 payout_, ERC20 underlying_, uint48 vesting_) internal virtual returns (uint48 expiry);
+    function _handlePayout(
+        address recipient_,
+        uint256 payout_,
+        ERC20 underlying_,
+        uint48[3] memory terms_ // [vesting, start, linearDuration]
+    ) internal virtual returns (uint48 expiry);
 
     /// @notice             Derive name and symbol of token for market
     /// @param underlying_   Underlying token to be paid out when the Bond Token vests

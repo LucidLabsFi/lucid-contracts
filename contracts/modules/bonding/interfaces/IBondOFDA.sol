@@ -29,6 +29,7 @@ interface IBondOFDA is IBondAuctioneer {
         uint256 minPrice; // minimum price (hard floor for the market)
         uint256 scale; // scaling factor for the market (see MarketParams struct)
         uint256 oracleConversion; // conversion factor for oracle -> market price
+        uint48 linearDuration; // duration of linear vesting
     }
 
     /// @notice             Parameters to create a new bond market
@@ -48,6 +49,7 @@ interface IBondOFDA is IBondAuctioneer {
     /// @dev                        If a start time is provided, the txn must be sent prior to the start time (functions as a deadline).
     /// @dev                        If start time is not provided (i.e. 0), the market will start immediately.
     /// @dev                    11. Market Duration (seconds) - Duration of the market in seconds.
+    /// @dev                    12. Is fixed term ? Linear vesting duration (seconds) : Linear expiry (timestamp), 0 for non-linear vesting.
     struct MarketParams {
         ERC20 payoutToken;
         ERC20 quoteToken;
@@ -61,6 +63,7 @@ interface IBondOFDA is IBondAuctioneer {
         uint48 vesting;
         uint48 start;
         uint48 duration;
+        uint48 linearDuration;
     }
 
     /// @notice Set the minimum market duration

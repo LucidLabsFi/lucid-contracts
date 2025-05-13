@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity 0.8.19;
 
-import {ISteerVault} from "../interfaces/ISteerVault.sol";
+import {IALMVault} from "../interfaces/IALMVault.sol";
 import {SimpleToken, IERC20} from "../../../tokens/mock/SimpleERC20.sol";
 
-contract MockSteerPool is SimpleToken {
+contract MockALMPool is SimpleToken {
     address public token0address;
     address public token1address;
     uint256 public totalAmount0;

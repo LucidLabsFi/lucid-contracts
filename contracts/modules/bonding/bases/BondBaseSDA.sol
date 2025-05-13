@@ -100,6 +100,7 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
     // A 'vesting' param longer than 50 years is considered a timestamp for fixed expiry.
     uint48 internal constant MAX_FIXED_TERM = 52 weeks * 50;
     uint48 internal constant FEE_DECIMALS = 1e5; // one percent equals 1000.
+    uint48 internal constant MIN_LINEAR_DURATION = 1800; // 1800 equals 15 mins.
 
     // BondAggregator contract with utility functions
     IBondAggregator internal immutable _aggregator;
@@ -119,6 +120,8 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
         minDebtBuffer = 10000; // 10%
 
         allowNewMarkets = true;
+
+        emit DefaultsUpdated(defaultTuneInterval, defaultTuneAdjustment, minDebtDecayInterval, minDepositInterval, minMarketDuration, minDebtBuffer);
     }
 
     /* ========== MARKET FUNCTIONS ========== */
@@ -259,7 +262,8 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
             maxDebt: maxDebt,
             start: start,
             conclusion: start + uint48(params_.duration),
-            vesting: params_.vesting
+            vesting: params_.vesting,
+            linearDuration: params_.linearDuration
         });
 
         emit MarketCreated(marketId, address(params_.payoutToken), address(params_.quoteToken), params_.vesting, params_.formattedInitialPrice);
@@ -601,9 +605,20 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
     /// @inheritdoc IBondAuctioneer
     function getMarketInfoForPurchase(
         uint256 id_
-    ) external view returns (address owner, address callbackAddr, ERC20 payoutToken, ERC20 quoteToken, uint48 vesting, uint256 maxPayout_) {
+    )
+        external
+        view
+        returns (address owner, address callbackAddr, ERC20 payoutToken, ERC20 quoteToken, uint48[3] memory vestTerms, uint256 maxPayout_)
+    {
         BondMarket memory market = markets[id_];
-        return (market.owner, market.callbackAddr, market.payoutToken, market.quoteToken, terms[id_].vesting, maxPayout(id_));
+        return (
+            market.owner,
+            market.callbackAddr,
+            market.payoutToken,
+            market.quoteToken,
+            [terms[id_].vesting, terms[id_].start, terms[id_].linearDuration],
+            maxPayout(id_)
+        );
     }
 
     /// @inheritdoc IBondSDA
@@ -621,7 +636,8 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
     /// @inheritdoc IBondAuctioneer
     function payoutFor(uint256 amount_, uint256 id_, address referrer_) public view override returns (uint256) {
         // Calculate the payout for the given amount of tokens
-        uint256 fee = amount_.mulDiv(_teller.getFee(referrer_), 1e5);
+        address issuer = markets[id_].owner;
+        uint256 fee = amount_.mulDiv(_teller.getFee(issuer, referrer_), 1e5);
         uint256 payout = (amount_ - fee).mulDiv(markets[id_].scale, marketPrice(id_));
 
         // Check that the payout is less than or equal to the maximum payout,
@@ -662,7 +678,7 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
         // this given it will be taken off the larger amount, but this avoids rounding
         // errors with trying to calculate the exact amount.
         // Therefore, the maxAmountAccepted is slightly conservative.
-        uint256 estimatedFee = amountAccepted.mulDiv(_teller.getFee(referrer_), 1e5);
+        uint256 estimatedFee = amountAccepted.mulDiv(_teller.getFee(market.owner, referrer_), 1e5);
 
         return amountAccepted + estimatedFee;
     }

@@ -10,7 +10,7 @@ contract BondUniV3OracleFactory {
     /// @notice Event emitted when a new oracle is deployed
     /// @param oracle The address of the newly deployed oracle contract
     /// @param caller The address of the deployer
-    event OracleDeployed(address oracle, address caller);
+    event OracleDeployed(address indexed oracle, address indexed caller);
 
     /// @notice Mapping to keep track of deployed oracles
     mapping(address => bool) public isDeployed;

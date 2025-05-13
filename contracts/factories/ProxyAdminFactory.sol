@@ -10,7 +10,7 @@ contract ProxyAdminFactory {
     /// @param proxyAdmin The address of the newly deployed ProxyAdmin contract
     /// @param caller The address of the deployer
     /// @param owner The address of the owner of the ProxyAdmin contract
-    event AdminDeployed(address proxyAdmin, address caller, address owner);
+    event AdminDeployed(address indexed proxyAdmin, address indexed caller, address indexed owner);
 
     /// @notice Mapping to keep track of deployed ProxyAdmin contracts
     mapping(address => bool) private _adminDeployed;

@@ -13,16 +13,16 @@ import {IBaseAdapter} from "./adapters/interfaces/IBaseAdapter.sol";
 contract Registry is Ownable2StepInit {
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    /// @notice Event emitted when an adapter is enabled or disabled
+    event AdapterSet(address adapter, bool enabled);
+
     /// @notice Error when the parameters are invalid
     error Registry_Invalid_Params();
     /// @notice Error when the address provided is not an adapter
     error Registry_NotAdapter();
 
-    /// @notice Event emitted when an adapter is enabled or disabled
-    event AdapterSet(address adapter, bool enabled);
-
     /// @dev Set of all adapter addresses
-    EnumerableSet.AddressSet private adapterSet;
+    EnumerableSet.AddressSet private _adapterSet;
 
     /// @dev List of all potential available chain ids
     uint256[] private _chainIds;
@@ -33,7 +33,7 @@ contract Registry is Ownable2StepInit {
      */
     constructor(address[] memory adapters, address owner) OwnableInit(owner) {
         for (uint256 i = 0; i < adapters.length; i++) {
-            adapterSet.add(adapters[i]);
+            _adapterSet.add(adapters[i]);
             emit AdapterSet(adapters[i], true);
         }
     }
@@ -44,7 +44,7 @@ contract Registry is Ownable2StepInit {
      * @return bool True if the address is a local adapter, false otherwise
      */
     function isLocalAdapter(address adapter) external view returns (bool) {
-        return adapterSet.contains(adapter);
+        return _adapterSet.contains(adapter);
     }
 
     /**
@@ -52,7 +52,7 @@ contract Registry is Ownable2StepInit {
      * @return address[] The list of adapter addresses
      */
     function getAdapters() external view returns (address[] memory) {
-        return adapterSet.values();
+        return _adapterSet.values();
     }
 
     /**
@@ -60,7 +60,7 @@ contract Registry is Ownable2StepInit {
      * @return uint256 The number of adapters
      */
     function getAdapterCount() external view returns (uint256) {
-        return adapterSet.length();
+        return _adapterSet.length();
     }
 
     /**
@@ -70,7 +70,7 @@ contract Registry is Ownable2StepInit {
      * @return uint256[] The list of supported chain IDs
      */
     function getSupportedChainsForAdapter(address _adapter) external view returns (uint256[] memory) {
-        if (!adapterSet.contains(_adapter)) revert Registry_NotAdapter();
+        if (!_adapterSet.contains(_adapter)) revert Registry_NotAdapter();
         IBaseAdapter adapter = IBaseAdapter(_adapter);
 
         uint256 count = 0;
@@ -100,8 +100,8 @@ contract Registry is Ownable2StepInit {
      */
     function getSupportedBridgesForChain(uint256 chainId) external view returns (address[] memory) {
         uint256 count = 0;
-        for (uint256 i = 0; i < adapterSet.length(); i++) {
-            address adapterAddress = adapterSet.at(i);
+        for (uint256 i = 0; i < _adapterSet.length(); i++) {
+            address adapterAddress = _adapterSet.at(i);
             IBaseAdapter adapter = IBaseAdapter(adapterAddress);
             if (adapter.isChainIdSupported(chainId)) {
                 count++;
@@ -109,8 +109,8 @@ contract Registry is Ownable2StepInit {
         }
         address[] memory supportedAdapters = new address[](count);
         uint256 index = 0;
-        for (uint256 i = 0; i < adapterSet.length(); i++) {
-            address adapterAddress = adapterSet.at(i);
+        for (uint256 i = 0; i < _adapterSet.length(); i++) {
+            address adapterAddress = _adapterSet.at(i);
             IBaseAdapter adapter = IBaseAdapter(adapterAddress);
             if (adapter.isChainIdSupported(chainId)) {
                 supportedAdapters[index] = adapterAddress;
@@ -131,9 +131,9 @@ contract Registry is Ownable2StepInit {
         if (adapters.length != enabled.length) revert Registry_Invalid_Params();
         for (uint256 i = 0; i < adapters.length; i++) {
             if (enabled[i]) {
-                adapterSet.add(adapters[i]);
+                _adapterSet.add(adapters[i]);
             } else {
-                adapterSet.remove(adapters[i]);
+                _adapterSet.remove(adapters[i]);
             }
             emit AdapterSet(adapters[i], enabled[i]);
         }

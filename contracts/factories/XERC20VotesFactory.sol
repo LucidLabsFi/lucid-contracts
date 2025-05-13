@@ -11,7 +11,7 @@ contract XERC20VotesFactory {
     /// @param name The name of the token
     /// @param symbol The symbol of the token
     /// @param deployer The address of the deployer
-    event TokenDeployed(address token, string name, string symbol, address deployer);
+    event TokenDeployed(address indexed token, string indexed name, string symbol, address indexed deployer);
 
     /// @notice Mapping to keep track of deployed tokens
     mapping(address => bool) public isDeployed;
@@ -28,9 +28,12 @@ contract XERC20VotesFactory {
         string memory name,
         string memory symbol,
         address[] memory recipients,
-        uint256[] memory amounts
+        uint256[] memory amounts,
+        address _treasury,
+        uint256[] memory _bridgeTaxTiers,
+        uint256[] memory _bridgeTaxBasisPoints
     ) external returns (address) {
-        address token = address(new XERC20Votes(name, symbol, recipients, amounts, _initialOwner));
+        address token = address(new XERC20Votes(name, symbol, recipients, amounts, _initialOwner, _treasury, _bridgeTaxTiers, _bridgeTaxBasisPoints));
         emit TokenDeployed(token, name, symbol, msg.sender);
         isDeployed[token] = true;
         return token;

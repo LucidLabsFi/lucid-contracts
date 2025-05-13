@@ -17,10 +17,10 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
     event DomainIdAssociated(uint256 chainId, string domainId);
 
     /// @notice Maps Axelar's domain ID (chain name) to the corresponding chain ID.
-    mapping(string => uint256) public _domainIdChains;
+    mapping(string => uint256) public domainIdChains;
 
     /// @notice Maps chain ID to the corresponding Axelar chain name.
-    mapping(uint256 => string) public _chainIdDomains;
+    mapping(uint256 => string) public chainIdDomains;
 
     /// @notice Constructor to initialize the AxelarAdapter.
     /// @param _bridgeRouter Address of the Axelar bridge router on the same chain.
@@ -30,6 +30,7 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
     /// @param fee Fee to be charged.
     /// @param chainIds Array of chain IDs supported by the adapter.
     /// @param domainIds Array of domain IDs specific to the Axelar for the chain IDs above.
+    /// @param owner Owner of the adapter
     constructor(
         address _bridgeRouter,
         address _axelarGasService,
@@ -45,8 +46,8 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
         if (_bridgeRouter == address(0)) revert Adapter_InvalidParams();
         if (domainIds.length != chainIds.length) revert Adapter_InvalidParams();
         for (uint256 i = 0; i < domainIds.length; i++) {
-            _domainIdChains[domainIds[i]] = chainIds[i];
-            _chainIdDomains[chainIds[i]] = domainIds[i];
+            domainIdChains[domainIds[i]] = chainIds[i];
+            chainIdDomains[chainIds[i]] = domainIds[i];
             emit DomainIdAssociated(chainIds[i], domainIds[i]);
         }
     }
@@ -56,20 +57,21 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
     /// @dev Refunds back to refundAddress any unused gas fees from Axelar. Returned value is always 0 since no id is produced, should be ignored.
     /// @param destChainId The destination chain ID.
     /// @param destination The destination address.
-    /// @param refundAddress The address to refund any unused gas fees.
+    /// @param options Additional params to be used by the adapter, abi ecooded refund address.
     /// @param message The message data to be relayed.
     /// @return transferId Bytes32(0), Axelar doesn't return a transferId.
     function relayMessage(
         uint256 destChainId,
         address destination,
-        address refundAddress,
-        bytes memory message
+        bytes memory options,
+        bytes calldata message
     ) external payable override whenNotPaused returns (bytes32) {
         // It's permissionless at this point. Msg.sender is encoded to the forwarded message
-        string memory destDomainId = _chainIdDomains[destChainId];
+        string memory destDomainId = chainIdDomains[destChainId];
         if (bytes(destDomainId).length == 0 || trustedAdapters[destChainId] == address(0)) revert Adapter_InvalidParams(); // Bridge doesn't support this chain id
 
         string memory recipient = AddressToString.toString(trustedAdapters[destChainId]);
+        address refundAddress = abi.decode(options, (address));
         bytes memory relayedMessage = abi.encode(BridgedMessage(message, msg.sender, destination));
 
         uint256 remainingValue = _deductFee(msg.value);
@@ -94,7 +96,7 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
         string calldata _sourceAddress,
         bytes calldata _payload
     ) internal override whenNotPaused {
-        _registerMessage(StringToAddress.toAddress(_sourceAddress), commandId, _payload, _domainIdChains[_sourceChain]);
+        _registerMessage(StringToAddress.toAddress(_sourceAddress), commandId, _payload, domainIdChains[_sourceChain]);
     }
 
     /// @notice Sets domain IDs and corresponding chain IDs.
@@ -104,8 +106,8 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
     function setDomainId(string[] memory domainId, uint256[] memory chainId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (domainId.length != chainId.length) revert Adapter_InvalidParams();
         for (uint256 i = 0; i < domainId.length; i++) {
-            _domainIdChains[domainId[i]] = chainId[i];
-            _chainIdDomains[chainId[i]] = domainId[i];
+            domainIdChains[domainId[i]] = chainId[i];
+            chainIdDomains[chainId[i]] = domainId[i];
             emit DomainIdAssociated(chainId[i], domainId[i]);
         }
     }

@@ -25,19 +25,19 @@ contract VotingControllerUpgradeable is
     IVotingController,
     IController
 {
-    /* ========== ERRORS ========== */
-    error Controller_InvalidVoteParams();
-    error Controller_InvalidBridgeParams();
-    error Controller_InvalidParams();
-    error Controller_OriginUnauthorised();
-    error Controller_EtherTransferFailed();
-
     /* ========== EVENTS ========== */
 
     event CrossChainVoteCast(address voter, address governor, uint256 proposalId);
     event CrossChainVoteRelayed(address bridgeAdapter, bytes32 transferId, address voter, address governor, uint256 proposalId);
     event ControllerForChainSet(address indexed controller, uint256 chainId);
     event LocalRegistrySet(address indexed localRegistry);
+
+    /* ========== ERRORS ========== */
+    error Controller_InvalidVoteParams();
+    error Controller_InvalidBridgeParams();
+    error Controller_InvalidParams();
+    error Controller_OriginUnauthorised();
+    error Controller_EtherTransferFailed();
 
     /* ========== STATE VARIABLES ========== */
     bytes32 public constant VOTE_TYPEHASH = keccak256("Vote(address destGovernor,uint256 chainId,uint256 proposalId,uint8 support,bytes voteData)");
@@ -150,7 +150,7 @@ contract VotingControllerUpgradeable is
         bytes32 transferId = IBaseAdapter(_calldata.adapter).relayMessage{value: msg.value}(
             _calldata.chainId,
             foreignController,
-            msg.sender,
+            _calldata.options,
             abi.encode(message)
         );
 

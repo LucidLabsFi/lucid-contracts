@@ -16,7 +16,7 @@ contract AssetControllerFactory {
     mapping(address => bool) public isDeployed;
 
     /// @notice Deploys a new AssetController contract
-    /// @param addresses Array of addresses: [token, initialOwner]
+    /// @param addresses Array of addresses: [token, initialOwner, pauser, feeCollector, controllerAddress]
     /// @param duration The duration of the controller
     /// @param minBridges The minimum number of bridges required
     /// @param multiBridgeAdapters Array of whitelisted multi-bridge adapters
@@ -24,9 +24,9 @@ contract AssetControllerFactory {
     /// @param bridges Array of bridge addresses
     /// @param mintingLimits Array of minting limits
     /// @param burningLimits Array of burning limits
-    /// @param controllerAddress The address of other asset controller addresses in other chains for the given chain IDs (if deployed with create3) - optional.
+    /// @param selectors Array of function selectors for mint and burn functions on the token
     function deployController(
-        address[3] memory addresses, // token, initialOwner
+        address[5] memory addresses, // token, initialOwner, pauser, feeCollector, controllerAddress
         uint256 duration,
         uint256 minBridges,
         address[] memory multiBridgeAdapters,
@@ -34,20 +34,10 @@ contract AssetControllerFactory {
         address[] memory bridges,
         uint256[] memory mintingLimits,
         uint256[] memory burningLimits,
-        address controllerAddress
+        bytes4[2] memory selectors
     ) external returns (address) {
         address controller = address(
-            new AssetController(
-                addresses,
-                duration,
-                minBridges,
-                multiBridgeAdapters,
-                chainId,
-                bridges,
-                mintingLimits,
-                burningLimits,
-                controllerAddress
-            )
+            new AssetController(addresses, duration, minBridges, multiBridgeAdapters, chainId, bridges, mintingLimits, burningLimits, selectors)
         );
         emit ControllerDeployed(controller, addresses[0], msg.sender);
         isDeployed[controller] = true;

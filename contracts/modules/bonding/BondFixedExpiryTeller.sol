@@ -4,7 +4,7 @@ pragma solidity 0.8.15;
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {ClonesWithImmutableArgs} from "./lib/ClonesWithImmutableArgs.sol";
 
-import {BondBaseTeller, IBondAggregator, Authority} from "./bases/BondBaseTeller.sol";
+import {BondBaseTeller, IBondAggregator, Authority, IBondVesting} from "./bases/BondBaseTeller.sol";
 import {IBondFixedExpiryTeller} from "./interfaces/IBondFixedExpiryTeller.sol";
 import {ERC20BondToken} from "./ERC20BondToken.sol";
 
@@ -34,6 +34,7 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
 
     /* ========== EVENTS ========== */
     event ERC20BondTokenCreated(ERC20BondToken bondToken, ERC20 indexed underlying, uint48 indexed expiry);
+    event BondRedeemed(address indexed recipient, address indexed underlying, address indexed bondToken, uint256 amount);
 
     /* ========== STATE VARIABLES ========== */
     /// @notice ERC20 bond tokens (unique to a underlying and expiry)
@@ -47,8 +48,9 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
         address protocol_,
         IBondAggregator aggregator_,
         address guardian_,
-        Authority authority_
-    ) BondBaseTeller(protocol_, aggregator_, guardian_, authority_) {
+        Authority authority_,
+        IBondVesting vesting_
+    ) BondBaseTeller(protocol_, aggregator_, guardian_, authority_, vesting_) {
         bondTokenImplementation = new ERC20BondToken();
     }
 
@@ -58,9 +60,14 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
     /// @param recipient_   Address to receive payout
     /// @param payout_      Amount of payoutToken to be paid
     /// @param underlying_   Token to be paid out
-    /// @param vesting_     Timestamp when the payout will vest
+    /// @param terms_       Terms of the bond market(vesting, start)
     /// @return expiry      Timestamp when the payout will vest
-    function _handlePayout(address recipient_, uint256 payout_, ERC20 underlying_, uint48 vesting_) internal override returns (uint48 expiry) {
+    function _handlePayout(
+        address recipient_,
+        uint256 payout_,
+        ERC20 underlying_,
+        uint48[3] memory terms_ // [vesting, start, linearDuration]
+    ) internal override returns (uint48 expiry) {
         // If there is no vesting time, the deposit is treated as an instant swap.
         // otherwise, deposit info is stored and payout is available at a future timestamp.
         // instant swap is denoted by expiry == 0.
@@ -72,13 +79,18 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
         // fixed-expiry bonds mature at a set timestamp
         // i.e. expiry = day 10. when alice deposits on day 1, her term
         // is 9 days. when bob deposits on day 2, his term is 8 days.
-        if (vesting_ > uint48(block.timestamp)) {
-            expiry = vesting_;
+        if (terms_[0] > uint48(block.timestamp)) {
+            expiry = terms_[0];
             // Fixed-expiry bonds mint ERC-20 tokens
             bondTokens[underlying_][expiry].mint(recipient_, payout_);
         } else {
-            // If no expiry, then transfer payout directly to user
-            underlying_.safeTransfer(recipient_, payout_);
+            // If no expiry, then treat as instant swap and create vesting schedule
+            // Note: Vesting: Is fixed term ? Vesting length (seconds) : Vesting expiry (timestamp).
+            underlying_.approve(address(bondVesting), payout_);
+            // In Fixed Expiry, linearDuration is the end timestamp, so we calculate the vesting duration as end - start.
+            uint256 linearDuration = uint256(terms_[2] - block.timestamp); // linear duration timestamp - now
+            expiry = terms_[2];
+            bondVesting.createVestingSchedule(recipient_, address(underlying_), uint256(block.timestamp), 0, linearDuration, 1, payout_);
         }
     }
 
@@ -140,6 +152,8 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
         // Burn bond token and transfer underlying
         token_.burn(_msgSender(), amount_);
         underlying.safeTransfer(_msgSender(), amount_);
+
+        emit BondRedeemed(_msgSender(), address(underlying), address(token_), amount_);
     }
 
     /* ========== TOKENIZATION ========== */
@@ -178,9 +192,9 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
         if (address(_aggregator.getTeller(id_)) != address(this)) revert Teller_InvalidParams();
 
         // Get the underlying and expiry for the market
-        (, , ERC20 underlying, , uint48 expiry, ) = _aggregator.getAuctioneer(id_).getMarketInfoForPurchase(id_);
+        (, , ERC20 underlying, , uint48[3] memory vestTerms, ) = _aggregator.getAuctioneer(id_).getMarketInfoForPurchase(id_);
 
-        return bondTokens[underlying][expiry];
+        return bondTokens[underlying][vestTerms[0]];
     }
 
     /// @inheritdoc IBondFixedExpiryTeller

@@ -14,6 +14,9 @@ contract WormholeMock is IWormholeRelayer {
         uint16 destination;
         address to;
         bytes callData;
+        uint256 gasLimit;
+        uint16 refundChain;
+        address refundAddress;
     }
 
     uint256 public counter;
@@ -37,7 +40,9 @@ contract WormholeMock is IWormholeRelayer {
         address targetAddress,
         bytes memory payload,
         uint256 receiverValue,
-        uint256 gasLimit
+        uint256 gasLimit,
+        uint16 refundChain,
+        address refundAddress
     ) external payable returns (uint64 sequence) {
         counter++;
         requests[counter] = receivedMessage({
@@ -45,7 +50,10 @@ contract WormholeMock is IWormholeRelayer {
             originDomainId: _originDomainIds[msg.sender],
             destination: targetChain,
             to: targetAddress,
-            callData: payload
+            callData: payload,
+            gasLimit: gasLimit,
+            refundChain: refundChain,
+            refundAddress: refundAddress
         });
         return uint64(counter);
     }

@@ -2,29 +2,36 @@
 pragma solidity 0.8.19;
 
 import {IWormholeRelayer} from "./interfaces/IWormholeRelayer.sol";
+import {IWormholeReceiver} from "./interfaces/IWormholeReceiver.sol";
 import {BaseAdapter} from "../BaseAdapter.sol";
 
 /// @title WormholeAdapter Adapter
 /// @notice Adapter contract that integrates with the Wormhole messaging bridge to send and receive messages.
-contract WormholeAdapter is BaseAdapter {
-    /// @notice Error messages when quoted fee after deductions is too low
-    error Adapter_FeeTooLow(uint256 requiredFee, uint256 deductedFee);
-
+contract WormholeAdapter is BaseAdapter, IWormholeReceiver {
     /// @notice Event emitted when a domain ID is associated with a chain ID.
     event DomainIdAssociated(uint256 chainId, uint16 domainId);
+
+    /// @notice Error messages when quoted fee after deductions is too low
+    error Adapter_FeeTooLow(uint256 requiredFee, uint256 deductedFee);
+    /// @notice Error message when the refund chain ID is unknown
+    error Adapter_UnknownRefundChainId();
+
+    /// @notice Options to be used when sending a message to Wormhole
+    struct Options {
+        address refundAddress;
+        uint256 refundChainId;
+        uint256 gasLimit;
+    }
 
     /// @notice Address of the Wormhole bridge on the same chain.
     /// @dev Calls to handle should only originate from this address.
     IWormholeRelayer public immutable BRIDGE;
 
-    /// @notice The maximum gas limit the transaction will consume on destination
-    uint256 public immutable GAS_LIMIT;
-
     /// @notice Maps Wormhole's domain ID (target id) to the corresponding chain ID.
-    mapping(uint16 => uint256) public _domainIdChains;
+    mapping(uint16 => uint256) public domainIdChains;
 
     /// @notice Maps chain ID to the corresponding Wormhole domain ID.
-    mapping(uint256 => uint16) public _chainIdDomains;
+    mapping(uint256 => uint16) public chainIdDomains;
 
     /// @notice Constructor to initialize the WormholeAdapter.
     /// @param _bridgeRouter Address of the Wormhole bridge router on the same chain.
@@ -40,18 +47,16 @@ contract WormholeAdapter is BaseAdapter {
         uint256 minimumGas,
         address treasury,
         uint48 fee,
-        uint256 _gasLimit,
         uint256[] memory chainIds,
         uint16[] memory domainIds,
         address owner
     ) BaseAdapter(name, minimumGas, treasury, fee, owner) {
         if (_bridgeRouter == address(0)) revert Adapter_InvalidParams();
-        GAS_LIMIT = _gasLimit;
         BRIDGE = IWormholeRelayer(_bridgeRouter);
         if (domainIds.length != chainIds.length) revert Adapter_InvalidParams();
         for (uint256 i = 0; i < domainIds.length; i++) {
-            _domainIdChains[domainIds[i]] = chainIds[i];
-            _chainIdDomains[chainIds[i]] = domainIds[i];
+            domainIdChains[domainIds[i]] = chainIds[i];
+            chainIdDomains[chainIds[i]] = domainIds[i];
             emit DomainIdAssociated(chainIds[i], domainIds[i]);
         }
     }
@@ -61,26 +66,37 @@ contract WormholeAdapter is BaseAdapter {
     /// @dev Gets a quote for the message and refunds any unused collects.
     /// @param destChainId The destination chain ID.
     /// @param destination The destination address.
-    /// @param refundAddress The address to refund any unused gas fees.
+    /// @param options Additional params to be used by the adapter, abi encoded Options struct of refundAddress, refundChainId and gasLimit (address, uint256, uint256)
     /// @param message The message data to be relayed.
     /// @return transferId The transfer ID of the relayed message.
     function relayMessage(
         uint256 destChainId,
         address destination,
-        address refundAddress,
+        bytes memory options,
         bytes memory message
     ) external payable override whenNotPaused returns (bytes32 transferId) {
         // It's permissionless at this point. Msg.sender is encoded to the forwarded message
-        uint16 destDomainId = _chainIdDomains[destChainId];
+        uint16 destDomainId = chainIdDomains[destChainId];
         if (destDomainId == 0 || trustedAdapters[destChainId] == address(0)) revert Adapter_InvalidParams(); // Bridge doesn't support this chain id
 
         address recipient = trustedAdapters[destChainId];
+        Options memory _op = abi.decode(options, (Options));
         bytes memory relayedMessage = abi.encode(BridgedMessage(message, msg.sender, destination));
+        uint16 refundDomainId = chainIdDomains[_op.refundChainId];
+        if (refundDomainId == 0) revert Adapter_UnknownRefundChainId();
 
-        (uint256 quotedFee, ) = BRIDGE.quoteEVMDeliveryPrice(destDomainId, 0, GAS_LIMIT);
-        _collectAndRefundFees(quotedFee, refundAddress);
+        (uint256 quotedFee, ) = BRIDGE.quoteEVMDeliveryPrice(destDomainId, 0, _op.gasLimit);
+        _collectAndRefundFees(quotedFee, _op.refundAddress);
 
-        uint64 sequenceId = BRIDGE.sendPayloadToEvm{value: quotedFee}(destDomainId, recipient, relayedMessage, 0, GAS_LIMIT);
+        uint64 sequenceId = BRIDGE.sendPayloadToEvm{value: quotedFee}(
+            destDomainId,
+            recipient,
+            relayedMessage,
+            0,
+            _op.gasLimit,
+            refundDomainId,
+            _op.refundAddress
+        );
         transferId = bytes32(uint256(sequenceId));
     }
 
@@ -91,7 +107,7 @@ contract WormholeAdapter is BaseAdapter {
     /// @param includeFee Whether to include the protocol fee in the calculation
     /// @return The calculated fee amount
     function quoteMessage(uint256 chainId, uint256 gasLimit, bool includeFee) external view returns (uint256) {
-        uint16 destDomainId = _chainIdDomains[chainId];
+        uint16 destDomainId = chainIdDomains[chainId];
         (uint256 fee, ) = BRIDGE.quoteEVMDeliveryPrice(destDomainId, 0, gasLimit);
         if (includeFee) {
             return fee + calculateFee(fee);
@@ -114,7 +130,7 @@ contract WormholeAdapter is BaseAdapter {
         bytes32 deliveryHash
     ) external payable whenNotPaused {
         if (address(BRIDGE) != msg.sender) revert Adapter_Unauthorised();
-        _registerMessage(address(uint160(uint256(sourceAddress))), deliveryHash, payload, _domainIdChains[sourceChain]);
+        _registerMessage(address(uint160(uint256(sourceAddress))), deliveryHash, payload, domainIdChains[sourceChain]);
     }
 
     /// @notice Sets domain IDs and corresponding chain IDs.
@@ -124,8 +140,8 @@ contract WormholeAdapter is BaseAdapter {
     function setDomainId(uint16[] memory domainId, uint256[] memory chainId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (domainId.length != chainId.length) revert Adapter_InvalidParams();
         for (uint256 i = 0; i < domainId.length; i++) {
-            _domainIdChains[domainId[i]] = chainId[i];
-            _chainIdDomains[chainId[i]] = domainId[i];
+            domainIdChains[domainId[i]] = chainId[i];
+            chainIdDomains[chainId[i]] = domainId[i];
             emit DomainIdAssociated(chainId[i], domainId[i]);
         }
     }

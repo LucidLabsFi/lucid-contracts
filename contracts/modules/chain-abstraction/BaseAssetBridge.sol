@@ -25,7 +25,7 @@ abstract contract BaseAssetBridge is AccessControl, Pausable {
     /**
      * @notice Reverts when a user with too low of a limit tries to call mint/burn
      */
-    error IXERC20_NotHighEnoughLimits();
+    error Controller_NotHighEnoughLimits();
 
     /**
      * @notice Contains the full minting and burning data for a particular bridge
@@ -71,14 +71,24 @@ abstract contract BaseAssetBridge is AccessControl, Pausable {
     /**
      * @notice The constructor for the BaseAssetBridge
      *
-     * @param _duration The duration it takes for the limits to fully replenish
+     * @param _owner The user getting the DEFAULT_ADMIN_ROLE and PAUSE_ROLE.
+     * @param _pauser The user getting the PAUSE_ROLE.
+     * @param _duration The duration it takes for the limits to fully replenish.
      * @param _bridges The list of bridge adapter addresses that have limits set for minting and burning.
      * @param _mintingLimits The list of minting limits for the bridge adapters.
      * @param _burningLimits The list of burning limits for the bridge adapters.
      */
-    constructor(address _owner, uint256 _duration, address[] memory _bridges, uint256[] memory _mintingLimits, uint256[] memory _burningLimits) {
+    constructor(
+        address _owner,
+        address _pauser,
+        uint256 _duration,
+        address[] memory _bridges,
+        uint256[] memory _mintingLimits,
+        uint256[] memory _burningLimits
+    ) {
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(PAUSE_ROLE, _owner);
+        _grantRole(PAUSE_ROLE, _pauser);
         if (_duration == 0) revert Controller_Invalid_Params();
         duration = _duration;
         if ((_bridges.length != _mintingLimits.length) || (_bridges.length != _burningLimits.length)) revert Controller_Invalid_Params();

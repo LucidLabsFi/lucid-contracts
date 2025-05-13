@@ -11,13 +11,13 @@ import {Ownable2StepInit, OwnableInit} from "../../utils/access/Ownable2StepInit
 contract FeeCollector is Ownable2StepInit {
     using SafeERC20 for IERC20;
 
+    /// @notice Event emitted when a fee is received
+    event FeeReceived(address indexed token, uint256 amount);
+
     /// @notice Error thrown when fee exceeds the maximum fee
     error FeeCollector_FeeExceedsMaxBps();
     /// @notice Error thrown when treasury is the zero address
     error FeeCollector_TreasuryZeroAddress();
-
-    /// @notice Event emitted when a fee is received
-    event FeeReceived(address indexed token, uint256 amount);
 
     /// @notice The divisor used to calculate fees (one percent equals 1000)
     uint256 public constant FEE_DIVISOR = 1e5;

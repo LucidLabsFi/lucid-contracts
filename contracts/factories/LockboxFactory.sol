@@ -10,7 +10,7 @@ contract LockboxFactory {
     /// @param token The address of the token used in the lockbox
     /// @param _xerc20 The address of the XERC20 token
     /// @param caller The address of the deployer
-    event LockboxDeployed(address token, address _xerc20, address caller);
+    event LockboxDeployed(address indexed token, address indexed _xerc20, address indexed caller);
 
     /// @notice Mapping to keep track of deployed lockboxes
     mapping(address => bool) public isDeployed;

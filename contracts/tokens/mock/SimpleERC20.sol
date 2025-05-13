@@ -7,4 +7,8 @@ contract SimpleToken is ERC20 {
     constructor() ERC20("Token", "TKN") {
         _mint(msg.sender, 1000000 * 10 ** decimals());
     }
+
+    function mint(address _to, uint256 _amount) external {
+        _mint(_to, _amount);
+    }
 }

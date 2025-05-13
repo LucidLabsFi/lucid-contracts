@@ -15,48 +15,15 @@ import {IRegistry} from "./interfaces/IRegistry.sol";
  * @dev This contract inherits from Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, and implements IController.
  */
 contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, IController {
-    /// @notice Error thrown when an unauthorized action is attempted.
-    error Controller_Unauthorised();
-
-    /// @notice Error thrown when a bridge is disabled.
-    error Controller_Bridge_Disabled();
-
-    /// @notice Error thrown when invalid parameters are provided.
-    error Controller_Invalid_Params();
-
-    /// @notice Error thrown when low level call fails during message execution
-    error Controller_Call_Failed(uint256 index);
-
-    /// @notice Error thrown when an ether transfer fails.
-    error Controller_EtherTransferFailed();
-
-    /// @notice Error thrown when a message is not executable.
-    error Controller_MsgNotExecutable();
-
-    /// @notice Error thrown when the threshold is not met for execution
-    error Controller_ThresholdNotMet();
-
-    /// @notice Error thrown when a message is not executable yet due to a timelock delay.
-    error Controller_MsgNotExecutableYet(uint256);
-
-    /// @notice Error thrown when a message is not cancellable.
-    error Controller_MsgNotCancellable();
-
-    /// @notice Error thrown when a message has expired.
-    error Controller_MsgExpired();
-
-    /// @notice Error thrown when an adapter resends a message that has already been delivered
-    error Controller_MessageResentByAadapter();
-
     /// @notice Event emitted when a message originator is set or updated.
     /// @param originator The address of the message originator.
     /// @param enabled A boolean indicating whether the originator is enabled or disabled.
-    event MessageOriginatorSet(address originator, bool enabled);
+    event MessageOriginatorSet(address indexed originator, bool enabled);
 
     /// @notice Event emitted when a message resender is set or updated.
     /// @param resender The address of the message resender.
     /// @param enabled A boolean indicating whether the resender is enabled or disabled.
-    event MessageResenderSet(address resender, bool enabled);
+    event MessageResenderSet(address indexed resender, bool enabled);
 
     /// @notice Event emitted when a message is relayed.
     /// @param messageId The unique identifier of the message.
@@ -112,6 +79,39 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
     /// @notice Event emitted when the timelock delay is set.
     /// @param timelockDelay The timelock delay in seconds.
     event TimelockDelaySet(uint256 timelockDelay);
+
+    /// @notice Error thrown when an unauthorized action is attempted.
+    error Controller_Unauthorised();
+
+    /// @notice Error thrown when a bridge is disabled.
+    error Controller_Bridge_Disabled();
+
+    /// @notice Error thrown when invalid parameters are provided.
+    error Controller_Invalid_Params();
+
+    /// @notice Error thrown when low level call fails during message execution
+    error Controller_Call_Failed(uint256 index);
+
+    /// @notice Error thrown when an ether transfer fails.
+    error Controller_EtherTransferFailed();
+
+    /// @notice Error thrown when a message is not executable.
+    error Controller_MsgNotExecutable();
+
+    /// @notice Error thrown when the threshold is not met for execution
+    error Controller_ThresholdNotMet();
+
+    /// @notice Error thrown when a message is not executable yet due to a timelock delay.
+    error Controller_MsgNotExecutableYet(uint256);
+
+    /// @notice Error thrown when a message is not cancellable.
+    error Controller_MsgNotCancellable();
+
+    /// @notice Error thrown when a message has expired.
+    error Controller_MsgExpired();
+
+    /// @notice Error thrown when an adapter resends a message that has already been delivered
+    error Controller_MessageResentByAadapter();
 
     /// @notice Struct representing a received message.
     /// @dev This struct holds the details of a message received from another chain.
@@ -193,6 +193,7 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
      * @param _controllerAddress The address of the message controller contract that will be set for _controllerChains
      * @param _vetoer The address of the vetoer that can cancel the execution of messages. Pass address(0) to disable vetoer.
      * @param _timelockDelay The timelock delay in seconds for message execution. Pass 0 to disable timelock.
+     * @param authUsers The addresses of the users that will be granted roles. The 1st element will get the DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the 2nd element will get the PAUSE_ROLE.
      */
     function initialize(
         address[] memory _messageOriginators,
@@ -202,14 +203,16 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
         address _controllerAddress,
         address _vetoer,
         uint256 _timelockDelay,
-        address _owner
+        address[2] memory authUsers
     ) public initializer {
         __AccessControl_init();
-        __ReentrancyGuard_init();
         __Pausable_init();
+        __ReentrancyGuard_init();
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _owner);
-        _setupRole(PAUSE_ROLE, _owner);
+        _setupRole(DEFAULT_ADMIN_ROLE, authUsers[0]);
+        _setupRole(PAUSE_ROLE, authUsers[0]);
+        _grantRole(PAUSE_ROLE, authUsers[1]);
+
         if (_localRegistry != address(0)) {
             localRegistry = _localRegistry;
             emit LocalRegistrySet(_localRegistry);
@@ -257,7 +260,8 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
         RelayedMessage memory relayedMsg,
         uint256 destChainId,
         address[] memory adapters,
-        uint256[] memory fees
+        uint256[] memory fees,
+        bytes[] memory options
     ) public payable nonReentrant whenNotPaused onlyRole(MESSAGE_ORIGINATOR_ROLE) {
         // create message id
         bytes32 messageId = calculateMessageId(destChainId);
@@ -269,8 +273,6 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
 
         // Revert if threshold is higher than the number of adapters that will execute the message
         if (adapters.length < relayedMsg.threshold) revert Controller_Invalid_Params();
-
-        if (adapters.length != fees.length) revert Controller_Invalid_Params();
 
         RelayedMessage memory sentMessage = RelayedMessage({
             targets: relayedMsg.targets,
@@ -284,13 +286,13 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
         _destChainForMessage[messageId] = destChainId;
 
         // relay message
-        _relayMessage(sentMessage, destChainId, adapters, fees);
+        _relayMessage(sentMessage, destChainId, adapters, fees, options);
         emit MessageCreated(messageId, destChainId, relayedMsg.threshold);
     }
 
     /**
      * @notice Resends a previously sent message from the same controller message to another chain.
-     * @dev Must be called by a message originator
+     * @dev Must be called by an account with the message resender role.
      * @param messageId The unique identifier of the message.
      * @param adapters The list of adapter addresses.
      * @param fees The list of fees for each adapter.
@@ -298,11 +300,12 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
     function resendMessage(
         bytes32 messageId,
         address[] memory adapters,
-        uint256[] memory fees
+        uint256[] memory fees,
+        bytes[] memory options
     ) public payable nonReentrant whenNotPaused onlyRole(MESSAGE_RESENDER_ROLE) {
         uint256 destChainId = _destChainForMessage[messageId];
         if (destChainId == 0) revert Controller_Invalid_Params();
-        _relayMessage(_relayedMessages[messageId], destChainId, adapters, fees);
+        _relayMessage(_relayedMessages[messageId], destChainId, adapters, fees, options);
         emit MessageResent(messageId);
     }
 
@@ -545,14 +548,20 @@ contract MessageControllerUpgradeable is Initializable, AccessControlUpgradeable
      * @param adapters The list of adapter addresses.
      * @param fees The list of fees for each adapter.
      */
-    function _relayMessage(RelayedMessage memory relayedMsg, uint256 destChainId, address[] memory adapters, uint256[] memory fees) internal {
-        if (adapters.length != fees.length) revert Controller_Invalid_Params();
+    function _relayMessage(
+        RelayedMessage memory relayedMsg,
+        uint256 destChainId,
+        address[] memory adapters,
+        uint256[] memory fees,
+        bytes[] memory options
+    ) internal {
+        if ((adapters.length != fees.length) || (adapters.length != options.length)) revert Controller_Invalid_Params();
 
         for (uint256 i = 0; i < adapters.length; i++) {
             IBaseAdapter(adapters[i]).relayMessage{value: fees[i]}(
                 destChainId,
                 getControllerForChain(destChainId),
-                msg.sender,
+                options[i],
                 abi.encode(relayedMsg)
             );
             emit MessageRelayed(relayedMsg.messageId, adapters[i]);

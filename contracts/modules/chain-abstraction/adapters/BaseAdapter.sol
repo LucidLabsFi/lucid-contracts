@@ -10,6 +10,16 @@ import {IBaseAdapter} from "./interfaces/IBaseAdapter.sol";
 /// @title BaseAdapter
 /// @notice Abstract base contract for adapters used to send and receive messages
 abstract contract BaseAdapter is IBaseAdapter, Pausable, AccessControl {
+    /* ========== EVENTS ========== */
+
+    /// @notice Emitted when the protocol fee is set
+    event ProtocolFeeSet(uint48 protocolFee);
+
+    /// @notice Emitted when the minimum gas is set
+    event MinGasSet(uint256 minGas);
+
+    event TrustedAdapterSet(address indexed adapter, uint256 chainId);
+
     /* ========== ERRORS ========== */
     /// @notice Error when the fee transfer fails
     error Adapter_FeeTransferFailed();
@@ -31,16 +41,6 @@ abstract contract BaseAdapter is IBaseAdapter, Pausable, AccessControl {
 
     /// @notice Error when the Bridge message ID is already processed
     error Adapter_AlreadyProcessed();
-
-    /* ========== EVENTS ========== */
-
-    /// @notice Emitted when the protocol fee is set
-    event ProtocolFeeSet(uint48 protocolFee);
-
-    /// @notice Emitted when the minimum gas is set
-    event MinGasSet(uint256 minGas);
-
-    event TrustedAdapterSet(address indexed adapter, uint256 chainId);
 
     /* ========== STATE VARIABLES ========== */
     /// @notice Stores received transfer IDs to prevent double processing

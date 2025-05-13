@@ -9,11 +9,11 @@ Parameters
 
 Licensor: Lucid Labs Ltd
 
-Licensed Work: Lucid Labs V1. The Licensed Work is (c) 2024 Lucid Labs Ltd.
+Licensed Work: Lucid Labs V2. The Licensed Work is (c) 2025 Lucid Labs Ltd.
 
 Additional Use Grant: Any uses listed and defined at this [LICENSE](./LICENSE.md)
 
-Change Date: The earlier of 01 January 2028 or a date specified at lucidlabsfi.eth
+Change Date: The earlier of 01 January 2029 or a date specified at lucidlabsfi.eth
 
 Change License: MIT
 

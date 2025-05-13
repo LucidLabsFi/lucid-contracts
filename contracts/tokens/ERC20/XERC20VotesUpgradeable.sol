@@ -2,13 +2,13 @@
 pragma solidity 0.8.19;
 
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {ERC20BurnableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import {ERC20VotesUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
 import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepInitUpgradeable} from "../../utils/access/upgradeable/Ownable2StepInitUpgradeable.sol";
-
-import {CallWithGas} from "../../utils/CallWithGas.sol";
 import {IXERC20} from "./interfaces/IXERC20.sol";
+import {IERC7802, IERC165} from "./interfaces/IERC7802.sol";
 
 /**
  * @title XERC20VotesUpgradeable
@@ -17,11 +17,36 @@ import {IXERC20} from "./interfaces/IXERC20.sol";
 contract XERC20VotesUpgradeable is
     Initializable,
     ERC20Upgradeable,
+    ERC20BurnableUpgradeable,
     ERC20PermitUpgradeable,
     ERC20VotesUpgradeable,
     Ownable2StepInitUpgradeable,
-    IXERC20
+    IXERC20,
+    IERC165,
+    IERC7802
 {
+    /**
+     * @notice Emitted when the treasury address is updated
+     * @param oldTreasury The previous treasury address
+     * @param newTreasury The new treasury address
+     */
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+
+    /**
+     * @notice Emitted when bridge tax tiers are updated
+     * @param thresholds The thresholds for the bridge tax tiers
+     * @param basisPoints The basis points for the bridge tax tiers
+     */
+    event BridgeTaxTiersUpdated(uint256[] thresholds, uint256[] basisPoints);
+
+    /**
+     * @notice Emitted when a bridge tax is collected
+     * @param user The user who minted tokens
+     * @param amount The amount of tokens minted
+     * @param taxAmount The amount of tax collected
+     */
+    event BridgeTaxCollected(address indexed user, uint256 amount, uint256 taxAmount);
+
     /**
      * @dev Error thrown when the parameters are invalid
      */
@@ -33,16 +58,42 @@ contract XERC20VotesUpgradeable is
     uint256 private constant DURATION = 1 days;
 
     /**
+     * @notice The maximum tax basis points, 50%
+     */
+    uint256 public constant MAX_TAX_BASIS_POINTS = 5000;
+
+    /**
      * @notice The address of the lockbox contract
      */
     address public lockbox;
+
+    /**
+     * @notice The address of the treasury that receives mint taxes
+     */
+    address public treasury;
+
+    /**
+     * @notice Structure to define a bridge tax tier
+     * @param threshold The minimum amount threshold for this tier
+     * @param basisPoints The tax rate in basis points (1/100 of 1%)
+     */
+    struct BridgeTaxTier {
+        uint256 threshold;
+        uint256 basisPoints;
+    }
+
+    /**
+     * @notice Array of bridge tax tiers, sorted by threshold (ascending)
+     * An empty array means tax is disabled
+     */
+    BridgeTaxTier[] public bridgeTaxTiers;
 
     mapping(address => Bridge) public bridges;
 
     /**
      * @dev Reserved storage space to allow for layout changes in future contract upgrades.
      */
-    uint256[50] private __gap;
+    uint256[47] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -56,20 +107,36 @@ contract XERC20VotesUpgradeable is
      * @param recipients The addresses of the recipients to mint tokens to
      * @param amounts The amounts of tokens to mint to the recipients. The arrays must be the same length
      * @param _owner The address of the owner
+     * @param _treasury The address of the treasury for bridge taxes, required only if bridge tax tiers are set
+     * @param _bridgeTaxTierThresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order), max 10 thresholds
+     * @param _bridgeTaxTierBasisPoints Array of basis points for each threshold tier, max 5000 bps
      */
     function initialize(
         string memory name,
         string memory symbol,
         address[] memory recipients,
         uint256[] memory amounts,
-        address _owner
+        address _owner,
+        address _treasury,
+        uint256[] memory _bridgeTaxTierThresholds,
+        uint256[] memory _bridgeTaxTierBasisPoints
     ) public initializer {
         __ERC20_init(name, symbol);
+        __ERC20Burnable_init();
         __ERC20Permit_init(name);
         __ERC20Votes_init();
         __OwnableInit_init(_owner);
 
         if ((recipients.length != amounts.length)) revert Token_InvalidParams();
+
+        if (_treasury != address(0)) {
+            treasury = _treasury;
+        }
+
+        if (_bridgeTaxTierThresholds.length > 0) {
+            _setupBridgeTaxTiers(_bridgeTaxTierThresholds, _bridgeTaxTierBasisPoints);
+        }
+
         for (uint256 i = 0; i < recipients.length; i++) {
             _mint(recipients[i], amounts[i]);
         }
@@ -105,8 +172,97 @@ contract XERC20VotesUpgradeable is
     }
 
     /**
+     * @notice Sets the treasury address
+     * @param _treasury The new treasury address
+     */
+    function setTreasury(address _treasury) external onlyOwner {
+        address oldTreasury = treasury;
+        treasury = _treasury;
+        emit TreasuryUpdated(oldTreasury, _treasury);
+    }
+
+    /**
+     * @notice Enables, disables, or updates the bridge tax tiers
+     * @param _thresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order)
+     * @param _basisPoints Array of basis points for each threshold tier
+     * @dev Passing empty arrays will disable bridge tax
+     */
+    function setBridgeTaxTiers(uint256[] memory _thresholds, uint256[] memory _basisPoints) external onlyOwner {
+        if (_thresholds.length == 0 && _basisPoints.length == 0) {
+            // Disable bridge tax by clearing the tiers
+            delete bridgeTaxTiers;
+        } else {
+            _setupBridgeTaxTiers(_thresholds, _basisPoints);
+        }
+        emit BridgeTaxTiersUpdated(_thresholds, _basisPoints);
+    }
+
+    /**
+     * @notice Check if bridge tax is enabled
+     * @return True if bridge tax is enabled (tiers exist and treasury is set)
+     */
+    function isBridgeTaxEnabled() public view returns (bool) {
+        return bridgeTaxTiers.length > 0 && treasury != address(0);
+    }
+
+    /**
+     * @notice Calculate the tax amount for a given mint amount using tiered taxation
+     * @param _amount The amount being minted
+     * @return taxAmount The total amount of tax to be collected
+     * @dev Each portion of the amount is taxed at its respective tier rate
+     */
+    function calculateBridgeTax(uint256 _amount) public view returns (uint256 taxAmount) {
+        if (!isBridgeTaxEnabled() || _amount == 0) {
+            return 0;
+        }
+
+        uint256 remainingAmount = _amount;
+        uint256 processedAmount = 0;
+
+        // First tier starts from 0 if not explicitly set
+        uint256 tierStartAmount = 0;
+
+        // Apply each tier's tax rate to its respective portion of the amount
+        for (uint256 i = 0; i < bridgeTaxTiers.length; i++) {
+            uint256 currentTierThreshold = bridgeTaxTiers[i].threshold;
+            uint256 currentTierBps = bridgeTaxTiers[i].basisPoints;
+
+            // Calculate the amount that falls into this tier
+            uint256 tierAmount;
+
+            if (i == bridgeTaxTiers.length - 1) {
+                // Last tier handles all remaining amount
+                tierAmount = remainingAmount;
+            } else if (remainingAmount > currentTierThreshold - tierStartAmount) {
+                // Part of the amount falls into this tier
+                tierAmount = currentTierThreshold - tierStartAmount;
+            } else {
+                // All remaining amount falls into this tier
+                tierAmount = remainingAmount;
+            }
+
+            // Calculate tax for this tier
+            if (tierAmount > 0) {
+                taxAmount += (tierAmount * currentTierBps) / 10000;
+                processedAmount += tierAmount;
+                remainingAmount -= tierAmount;
+            }
+
+            // Update start of next tier
+            tierStartAmount = currentTierThreshold;
+
+            // Break if we've processed the entire amount
+            if (remainingAmount == 0) {
+                break;
+            }
+        }
+
+        return taxAmount;
+    }
+
+    /**
      * @notice Mints tokens for a user
-     * @dev Can only be called by a bridge
+     * @dev Can only be called by a bridge or the owner
      * @param _user The address of the user who needs tokens minted
      * @param _amount The amount of tokens being minted
      */
@@ -120,22 +276,54 @@ contract XERC20VotesUpgradeable is
     }
 
     /**
-     * @notice Burns tokens for a user
-     * @dev Can only be called by a bridge
+     * @notice Mint tokens through a crosschain transfer.
+     * @param _to The address to mint tokens to.
+     * @param _amount The amount of tokens to mint.
+     */
+    function crosschainMint(address _to, uint256 _amount) external {
+        _mintWithCaller(msg.sender, _to, _amount);
+        emit CrosschainMint(_to, _amount, msg.sender);
+    }
+
+    /**
+     * @notice Burns tokens for a user using bridge limits
+     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
      * @param _user The address of the user who needs tokens burned
      * @param _amount The amount of tokens being burned
      */
-
     function burn(address _user, uint256 _amount) public {
-        if (msg.sender == owner()) {
-            _burn(_user, _amount);
-        } else {
-            if (msg.sender != _user) {
-                _spendAllowance(_user, msg.sender, _amount);
-            }
+        _burnFrom(_user, _amount);
+    }
 
-            _burnWithCaller(msg.sender, _user, _amount);
-        }
+    /**
+     * @notice Burns tokens for a user using bridge limits
+     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
+     * @param _user The address of the user who needs tokens burned
+     * @param _amount The amount of tokens being burned
+     */
+    function burnFrom(address _user, uint256 _amount) public override {
+        _burnFrom(_user, _amount);
+    }
+
+    /**
+     * @notice Burns tokens for msg.sender using bridge limits
+     * @dev Override the ERC20Burnable implementation to use bridge limits
+     * @param _amount The amount of tokens being burned
+     */
+    function burn(uint256 _amount) public override {
+        _burnWithCaller(msg.sender, msg.sender, _amount);
+    }
+
+    /**
+     * @notice Burn tokens through a crosschain transfer.
+     * @dev If the caller is not the from address, an allowance needs to be given.
+     * @param _from The address to burn tokens from.
+     * @param _amount The amount of tokens to burn.
+     */
+    function crosschainBurn(address _from, uint256 _amount) external {
+        _spendAllowance(_from, msg.sender, _amount);
+        _burnWithCaller(msg.sender, _from, _amount);
+        emit CrosschainBurn(_from, _amount, msg.sender);
     }
 
     /**
@@ -149,6 +337,15 @@ contract XERC20VotesUpgradeable is
         _changeMinterLimit(_bridge, _mintingLimit);
         _changeBurnerLimit(_bridge, _burningLimit);
         emit BridgeLimitsSet(_mintingLimit, _burningLimit, _bridge);
+    }
+
+    /**
+     * @notice Returns true if the contract implements the interface
+     * @param interfaceId The interface id to check
+     * @return True if the contract implements the interface, false otherwise
+     */
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IERC7802).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     /**
@@ -203,6 +400,19 @@ contract XERC20VotesUpgradeable is
             bridges[_bridge].burnerParams.timestamp,
             bridges[_bridge].burnerParams.ratePerSecond
         );
+    }
+
+    /**
+     * @notice Burns tokens for a user using bridge limits
+     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
+     * @param _user The address of the user who needs tokens burned
+     * @param _amount The amount of tokens being burned
+     */
+    function _burnFrom(address _user, uint256 _amount) internal {
+        if (msg.sender != _user) {
+            _spendAllowance(_user, msg.sender, _amount);
+        }
+        _burnWithCaller(msg.sender, _user, _amount);
     }
 
     /**
@@ -313,6 +523,36 @@ contract XERC20VotesUpgradeable is
     }
 
     /**
+     * @notice Setup bridge tax tiers, Max 10 tiers can be set
+     * @dev Thresholds must be sorted in ascending order, basis points must be less than or equal to MAX_TAX_BASIS_POINTS
+     * @param _thresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order)
+     * @param _basisPoints Array of basis points for each threshold tier
+     */
+    function _setupBridgeTaxTiers(uint256[] memory _thresholds, uint256[] memory _basisPoints) internal {
+        if (_thresholds.length != _basisPoints.length) revert Token_InvalidParams();
+        if (_thresholds.length > 10) revert Token_InvalidParams();
+
+        // Clear existing tiers
+        if (bridgeTaxTiers.length > 0) {
+            delete bridgeTaxTiers;
+        }
+
+        // Check threshold values are valid
+        for (uint256 i = 0; i < _thresholds.length; i++) {
+            // Ensure threshold is not zero (except first tier)
+            if (i > 0 && _thresholds[i] == 0) revert Token_InvalidParams();
+            // Ensure thresholds are in strictly ascending order
+            if (i > 0 && _thresholds[i] <= _thresholds[i - 1]) revert Token_InvalidParams();
+            // Ensure basis points are within valid range
+            if (_basisPoints[i] > MAX_TAX_BASIS_POINTS) revert Token_InvalidParams();
+            // Ensure both threshold and basis points are not zero
+            if (_thresholds[i] == 0 && _basisPoints[i] == 0) revert Token_InvalidParams();
+
+            bridgeTaxTiers.push(BridgeTaxTier({threshold: _thresholds[i], basisPoints: _basisPoints[i]}));
+        }
+    }
+
+    /**
      * @notice Internal function for burning tokens
      *
      * @param _caller The caller address
@@ -342,7 +582,22 @@ contract XERC20VotesUpgradeable is
             uint256 _currentLimit = mintingCurrentLimitOf(_caller);
             if (_currentLimit < _amount) revert IXERC20_NotHighEnoughLimits();
             _useMinterLimits(_caller, _amount);
+
+            uint256 taxAmount = calculateBridgeTax(_amount);
+            if (taxAmount > 0) {
+                // Mint to user minus tax
+                _mint(_user, _amount - taxAmount);
+
+                // Mint bridge tax amount to treasury
+                _mint(treasury, taxAmount);
+
+                // Emit event for the tax collection
+                emit BridgeTaxCollected(_user, _amount, taxAmount);
+                return;
+            }
         }
+
+        // Standard minting if no tax was applied or tax is disabled
         _mint(_user, _amount);
     }
 

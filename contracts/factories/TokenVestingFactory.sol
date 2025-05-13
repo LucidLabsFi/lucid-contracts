@@ -9,12 +9,12 @@ contract TokenVestingFactory {
     /// @notice Event emitted when a new vesting contract is deployed
     /// @param vestingContract The address of the newly deployed vesting contract
     /// @param caller The address of the deployer
-    event VestingDeployed(address vestingContract, address caller);
+    event VestingDeployed(address indexed vestingContract, address indexed caller);
 
     /// @notice Event emitted when a new vesting contract with flexible voting support is deployed
     /// @param vestingContract The address of the newly deployed vesting contract
     /// @param caller The address of the deployer
-    event VestingFlexVotingDeployed(address vestingContract, address caller);
+    event VestingFlexVotingDeployed(address indexed vestingContract, address indexed caller);
 
     /// @notice Mapping to keep track of deployed vesting contracts
     mapping(address => bool) private _vestingDeployed;

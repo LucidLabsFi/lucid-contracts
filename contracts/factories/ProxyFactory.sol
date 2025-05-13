@@ -12,7 +12,7 @@ contract ProxyFactory {
     /// @param caller The address of the deployer
     /// @param proxyAdmin The address of the proxy admin
     /// @param data The data to be used for the proxy
-    event ProxyDeployed(address proxy, address logic, address caller, address proxyAdmin, bytes data);
+    event ProxyDeployed(address indexed proxy, address indexed logic, address indexed caller, address proxyAdmin, bytes data);
 
     /// @notice Mapping to keep track of deployed proxies
     mapping(address => bool) private _proxyDeployed;

@@ -3,7 +3,7 @@ pragma solidity 0.8.15;
 
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 
-import {BondBaseTeller, IBondAggregator, Authority} from "./bases/BondBaseTeller.sol";
+import {BondBaseTeller, IBondAggregator, Authority, IBondVesting} from "./bases/BondBaseTeller.sol";
 import {IBondFixedTermTeller} from "./interfaces/IBondFixedTermTeller.sol";
 
 import {TransferHelper} from "./lib/TransferHelper.sol";
@@ -32,6 +32,7 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
 
     /* ========== EVENTS ========== */
     event ERC1155BondTokenCreated(uint256 tokenId, ERC20 indexed underlying, uint48 indexed expiry);
+    event BondRedeemed(address indexed user, address indexed underlying, uint256 indexed tokenId, uint256 amount);
 
     /* ========== STATE VARIABLES ========== */
 
@@ -42,8 +43,9 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
         address protocol_,
         IBondAggregator aggregator_,
         address guardian_,
-        Authority authority_
-    ) BondBaseTeller(protocol_, aggregator_, guardian_, authority_) {}
+        Authority authority_,
+        IBondVesting vesting_
+    ) BondBaseTeller(protocol_, aggregator_, guardian_, authority_, vesting_) {}
 
     /* ========== PURCHASE ========== */
 
@@ -51,9 +53,16 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
     /// @param recipient_   Address to receive payout
     /// @param payout_      Amount of payoutToken to be paid
     /// @param payoutToken_   Token to be paid out
-    /// @param vesting_     Amount of time to vest from current timestamp
+    /// @param terms_        Terms of the bond(vesting, start, linearDuration)
     /// @return expiry      Timestamp when the payout will vest
-    function _handlePayout(address recipient_, uint256 payout_, ERC20 payoutToken_, uint48 vesting_) internal override returns (uint48 expiry) {
+    function _handlePayout(
+        address recipient_,
+        uint256 payout_,
+        ERC20 payoutToken_,
+        uint48[3] memory terms_ // [vesting, start, linearDuration]
+    ) internal override returns (uint48 expiry) {
+        uint48 vesting_ = terms_[0];
+        // uint48 start_ = terms_[1];
         // If there is no vesting time, the deposit is treated as an instant swap.
         // otherwise, deposit info is stored and payout is available at a future timestamp.
         // instant swap is denoted by expiry == 0.
@@ -81,8 +90,12 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
             // Mint bond token to recipient
             _mintToken(recipient_, tokenId, payout_);
         } else {
-            // If no expiry, then transfer payout directly to user
-            payoutToken_.safeTransfer(recipient_, payout_);
+            // If no expiry, then treat as instant swap and create vesting schedule
+            // Note: Vesting: Is fixed term ? Vesting length (seconds) : Vesting expiry (timestamp).
+            payoutToken_.approve(address(bondVesting), payout_);
+            // Start is always a timestamp (in the past), so we want the vesting schedule to start now.
+            expiry = terms_[1] + terms_[2];
+            bondVesting.createVestingSchedule(recipient_, address(payoutToken_), uint256(block.timestamp), 0, uint256(terms_[2]), 1, payout_);
         }
     }
 
@@ -143,6 +156,8 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
         // Burn bond token and transfer underlying to sender
         _burnToken(_msgSender(), tokenId_, amount_);
         meta.underlying.safeTransfer(_msgSender(), amount_);
+
+        emit BondRedeemed(_msgSender(), address(meta.underlying), tokenId_, amount_);
     }
 
     /// @inheritdoc IBondFixedTermTeller
