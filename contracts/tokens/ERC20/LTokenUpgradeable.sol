@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.19;
 
+import {AccessControlUpgradeable, IAccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC20BurnableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import {ERC20VotesUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
 import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {Ownable2StepInitUpgradeable} from "../../utils/access/upgradeable/Ownable2StepInitUpgradeable.sol";
-import {IXERC20} from "./interfaces/IXERC20.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import {ILToken} from "./interfaces/ILToken.sol";
 import {IERC7802, IERC165} from "./interfaces/IERC7802.sol";
 
 /**
- * @title XERC20VotesUpgradeable
- * @dev Upgradeable implementation of an XERC20 contract inheriting the ERC20Votes token functionality
+ * @title LTokenUpgradeable
+ * @dev Upgradeable implementation of a variation of the XERC20 standard in an IERC7802-compatible contract.
  */
-contract XERC20VotesUpgradeable is
+contract LTokenUpgradeable is
     Initializable,
+    AccessControlUpgradeable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
     ERC20PermitUpgradeable,
-    ERC20VotesUpgradeable,
-    Ownable2StepInitUpgradeable,
-    IXERC20,
+    PausableUpgradeable,
+    ILToken,
     IERC165,
     IERC7802
 {
@@ -53,9 +53,14 @@ contract XERC20VotesUpgradeable is
     error Token_InvalidParams();
 
     /**
-     * @notice Error thrown when new limits are too high.
+     * @dev Error thrown when transfers are paused
      */
-    error Token_LimitsTooHigh();
+    error Token_TransfersPaused();
+
+    /**
+     * @notice Role that can pause/unpause the contract
+     */
+    bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
 
     /**
      * @notice The duration it takes for the limits to fully replenish
@@ -68,9 +73,9 @@ contract XERC20VotesUpgradeable is
     uint256 public constant MAX_TAX_BASIS_POINTS = 5000;
 
     /**
-     * @notice The address of the lockbox contract
+     * @notice The number of decimals for the token
      */
-    address public lockbox;
+    uint8 private _decimals;
 
     /**
      * @notice The address of the treasury that receives mint taxes
@@ -93,6 +98,9 @@ contract XERC20VotesUpgradeable is
      */
     BridgeTaxTier[] public bridgeTaxTiers;
 
+    /**
+     * @notice Mapping to define a bridge's minting and burning parameters
+     */
     mapping(address => Bridge) public bridges;
 
     /**
@@ -109,9 +117,8 @@ contract XERC20VotesUpgradeable is
      * @notice Initializes the contract
      * @param name The name of the token
      * @param symbol The symbol of the token
-     * @param recipients The addresses of the recipients to mint tokens to
-     * @param amounts The amounts of tokens to mint to the recipients. The arrays must be the same length
-     * @param _owner The address of the owner
+     * @param __decimals The number of decimals for the token
+     * @param _owner The address of the owner that will get the DEFAULT_ADMIN_ROLE and PAUSE_ROLE
      * @param _treasury The address of the treasury for bridge taxes, required only if bridge tax tiers are set
      * @param _bridgeTaxTierThresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order), max 10 thresholds
      * @param _bridgeTaxTierBasisPoints Array of basis points for each threshold tier, max 5000 bps
@@ -119,20 +126,21 @@ contract XERC20VotesUpgradeable is
     function initialize(
         string memory name,
         string memory symbol,
-        address[] memory recipients,
-        uint256[] memory amounts,
+        uint8 __decimals,
         address _owner,
         address _treasury,
         uint256[] memory _bridgeTaxTierThresholds,
         uint256[] memory _bridgeTaxTierBasisPoints
     ) public initializer {
+        __AccessControl_init();
         __ERC20_init(name, symbol);
         __ERC20Burnable_init();
         __ERC20Permit_init(name);
-        __ERC20Votes_init();
-        __OwnableInit_init(_owner);
+        __Pausable_init();
+        _decimals = __decimals;
 
-        if ((recipients.length != amounts.length)) revert Token_InvalidParams();
+        _setupRole(DEFAULT_ADMIN_ROLE, _owner);
+        _setupRole(PAUSE_ROLE, _owner);
 
         if (_treasury != address(0)) {
             treasury = _treasury;
@@ -141,65 +149,150 @@ contract XERC20VotesUpgradeable is
         if (_bridgeTaxTierThresholds.length > 0) {
             _setupBridgeTaxTiers(_bridgeTaxTierThresholds, _bridgeTaxTierBasisPoints);
         }
-
-        for (uint256 i = 0; i < recipients.length; i++) {
-            _mint(recipients[i], amounts[i]);
-        }
     }
 
-    /**
-     * @dev Override default ERC20Votes implementation to use timestamp instead of block number for clock
-     *
-     * @return The current timestamp
-     */
-    function clock() public view override returns (uint48) {
-        return uint48(block.timestamp);
-    }
+    /* ========== PUBLIC ========== */
 
     /**
-     * @dev Override default ERC20Votes implementation to use timestamp instead of block number for clock
-     *
-     * @return The clock mode
-     */
-    function CLOCK_MODE() public pure override returns (string memory) {
-        return "mode=timestamp";
-    }
-
-    /**
-     * @notice Sets the lockbox address
-     *
-     * @param _lockbox The address of the lockbox
+     * @notice Mints tokens for a user
+     * @dev Can only be called by a bridge or the owner
+     * @param _user The address of the user who needs tokens minted
+     * @param _amount The amount of tokens being minted
      */
 
-    function setLockbox(address _lockbox) external onlyOwner {
-        lockbox = _lockbox;
-        emit LockboxSet(_lockbox);
-    }
-
-    /**
-     * @notice Sets the treasury address
-     * @param _treasury The new treasury address
-     */
-    function setTreasury(address _treasury) external onlyOwner {
-        address oldTreasury = treasury;
-        treasury = _treasury;
-        emit TreasuryUpdated(oldTreasury, _treasury);
-    }
-
-    /**
-     * @notice Enables, disables, or updates the bridge tax tiers
-     * @param _thresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order)
-     * @param _basisPoints Array of basis points for each threshold tier
-     * @dev Passing empty arrays will disable bridge tax
-     */
-    function setBridgeTaxTiers(uint256[] memory _thresholds, uint256[] memory _basisPoints) external onlyOwner {
-        if (_thresholds.length == 0 && _basisPoints.length == 0) {
-            // Disable bridge tax by clearing the tiers
-            delete bridgeTaxTiers;
+    function mint(address _user, uint256 _amount) public {
+        if (hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            _mint(_user, _amount);
         } else {
-            _setupBridgeTaxTiers(_thresholds, _basisPoints);
+            _mintWithCaller(msg.sender, _user, _amount);
         }
-        emit BridgeTaxTiersUpdated(_thresholds, _basisPoints);
+    }
+
+    /**
+     * @notice Mint tokens through a crosschain transfer.
+     * @param _to The address to mint tokens to.
+     * @param _amount The amount of tokens to mint.
+     */
+    function crosschainMint(address _to, uint256 _amount) external {
+        _mintWithCaller(msg.sender, _to, _amount);
+        emit CrosschainMint(_to, _amount, msg.sender);
+    }
+
+    /**
+     * @notice Burns tokens for a user using bridge limits
+     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
+     * @param _user The address of the user who needs tokens burned
+     * @param _amount The amount of tokens being burned
+     */
+    function burn(address _user, uint256 _amount) public {
+        _burnFrom(_user, _amount);
+    }
+
+    /**
+     * @notice Burns tokens for a user using bridge limits
+     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
+     * @param _user The address of the user who needs tokens burned
+     * @param _amount The amount of tokens being burned
+     */
+    function burnFrom(address _user, uint256 _amount) public override {
+        _burnFrom(_user, _amount);
+    }
+
+    /**
+     * @notice Burns tokens for msg.sender using bridge limits
+     * @dev Override the ERC20Burnable implementation to use bridge limits
+     * @param _amount The amount of tokens being burned
+     */
+    function burn(uint256 _amount) public override {
+        _burnWithCaller(msg.sender, msg.sender, _amount);
+    }
+
+    /**
+     * @notice Burn tokens through a crosschain transfer.
+     * @dev If the caller is not the from address, an allowance needs to be given.
+     * @param _from The address to burn tokens from.
+     * @param _amount The amount of tokens to burn.
+     */
+    function crosschainBurn(address _from, uint256 _amount) external {
+        _spendAllowance(_from, msg.sender, _amount);
+        _burnWithCaller(msg.sender, _from, _amount);
+        emit CrosschainBurn(_from, _amount, msg.sender);
+    }
+
+    /* ========== VIEW ========== */
+
+    /**
+     * @notice Returns true if the contract implements the interface
+     * @param interfaceId The interface id to check
+     * @return True if the contract implements the interface, false otherwise
+     */
+    function supportsInterface(bytes4 interfaceId) public pure override(AccessControlUpgradeable, IERC165) returns (bool) {
+        return
+            interfaceId == type(IERC7802).interfaceId ||
+            interfaceId == type(IERC165).interfaceId ||
+            interfaceId == type(IAccessControlUpgradeable).interfaceId;
+    }
+
+    /**
+     * @notice Returns the decimals of the token
+     * @return The number of decimals for the token
+     */
+    function decimals() public view override returns (uint8) {
+        return _decimals;
+    }
+
+    /**
+     * @notice Returns the max limit of a bridge
+     *
+     * @param _bridge the bridge we are viewing the limits of
+     * @return _limit The limit the bridge has
+     */
+
+    function mintingMaxLimitOf(address _bridge) public view returns (uint256 _limit) {
+        _limit = bridges[_bridge].minterParams.maxLimit;
+    }
+
+    /**
+     * @notice Returns the max limit of a bridge
+     *
+     * @param _bridge the bridge we are viewing the limits of
+     * @return _limit The limit the bridge has
+     */
+
+    function burningMaxLimitOf(address _bridge) public view returns (uint256 _limit) {
+        _limit = bridges[_bridge].burnerParams.maxLimit;
+    }
+
+    /**
+     * @notice Returns the current limit of a bridge
+     *
+     * @param _bridge the bridge we are viewing the limits of
+     * @return _limit The limit the bridge has
+     */
+
+    function mintingCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
+        _limit = _getCurrentLimit(
+            bridges[_bridge].minterParams.currentLimit,
+            bridges[_bridge].minterParams.maxLimit,
+            bridges[_bridge].minterParams.timestamp,
+            bridges[_bridge].minterParams.ratePerSecond
+        );
+    }
+
+    /**
+     * @notice Returns the current limit of a bridge
+     *
+     * @param _bridge the bridge we are viewing the limits of
+     * @return _limit The limit the bridge has
+     */
+
+    function burningCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
+        _limit = _getCurrentLimit(
+            bridges[_bridge].burnerParams.currentLimit,
+            bridges[_bridge].burnerParams.maxLimit,
+            bridges[_bridge].burnerParams.timestamp,
+            bridges[_bridge].burnerParams.ratePerSecond
+        );
     }
 
     /**
@@ -265,71 +358,7 @@ contract XERC20VotesUpgradeable is
         return taxAmount;
     }
 
-    /**
-     * @notice Mints tokens for a user
-     * @dev Can only be called by a bridge or the owner
-     * @param _user The address of the user who needs tokens minted
-     * @param _amount The amount of tokens being minted
-     */
-
-    function mint(address _user, uint256 _amount) public {
-        if (msg.sender == owner()) {
-            _mint(_user, _amount);
-        } else {
-            _mintWithCaller(msg.sender, _user, _amount);
-        }
-    }
-
-    /**
-     * @notice Mint tokens through a crosschain transfer.
-     * @param _to The address to mint tokens to.
-     * @param _amount The amount of tokens to mint.
-     */
-    function crosschainMint(address _to, uint256 _amount) external {
-        _mintWithCaller(msg.sender, _to, _amount);
-        emit CrosschainMint(_to, _amount, msg.sender);
-    }
-
-    /**
-     * @notice Burns tokens for a user using bridge limits
-     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
-     * @param _user The address of the user who needs tokens burned
-     * @param _amount The amount of tokens being burned
-     */
-    function burn(address _user, uint256 _amount) public {
-        _burnFrom(_user, _amount);
-    }
-
-    /**
-     * @notice Burns tokens for a user using bridge limits
-     * @dev Can be called by a bridge. If msg.sender is not user, an allowance needs to be given.
-     * @param _user The address of the user who needs tokens burned
-     * @param _amount The amount of tokens being burned
-     */
-    function burnFrom(address _user, uint256 _amount) public override {
-        _burnFrom(_user, _amount);
-    }
-
-    /**
-     * @notice Burns tokens for msg.sender using bridge limits
-     * @dev Override the ERC20Burnable implementation to use bridge limits
-     * @param _amount The amount of tokens being burned
-     */
-    function burn(uint256 _amount) public override {
-        _burnWithCaller(msg.sender, msg.sender, _amount);
-    }
-
-    /**
-     * @notice Burn tokens through a crosschain transfer.
-     * @dev If the caller is not the from address, an allowance needs to be given.
-     * @param _from The address to burn tokens from.
-     * @param _amount The amount of tokens to burn.
-     */
-    function crosschainBurn(address _from, uint256 _amount) external {
-        _spendAllowance(_from, msg.sender, _amount);
-        _burnWithCaller(msg.sender, _from, _amount);
-        emit CrosschainBurn(_from, _amount, msg.sender);
-    }
+    /* ========== ADMIN ========== */
 
     /**
      * @notice Updates the limits of any bridge
@@ -338,10 +367,10 @@ contract XERC20VotesUpgradeable is
      * @param _burningLimit The updated burning limit we are setting to the bridge
      * @param _bridge The address of the bridge we are setting the limits too
      */
-    function setLimits(address _bridge, uint256 _mintingLimit, uint256 _burningLimit) external onlyOwner {
+    function setLimits(address _bridge, uint256 _mintingLimit, uint256 _burningLimit) external onlyRole(DEFAULT_ADMIN_ROLE) {
         // Ensure new limits do not cause overflows
         if (_mintingLimit > (type(uint256).max / 2) || _burningLimit > (type(uint256).max / 2)) {
-            revert Token_LimitsTooHigh();
+            revert LToken_LimitsTooHigh();
         }
 
         _changeMinterLimit(_bridge, _mintingLimit);
@@ -350,67 +379,48 @@ contract XERC20VotesUpgradeable is
     }
 
     /**
-     * @notice Returns true if the contract implements the interface
-     * @param interfaceId The interface id to check
-     * @return True if the contract implements the interface, false otherwise
+     * @notice Sets the treasury address
+     * @param _treasury The new treasury address
      */
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IERC7802).interfaceId || interfaceId == type(IERC165).interfaceId;
+    function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address oldTreasury = treasury;
+        treasury = _treasury;
+        emit TreasuryUpdated(oldTreasury, _treasury);
     }
 
     /**
-     * @notice Returns the max limit of a bridge
-     *
-     * @param _bridge the bridge we are viewing the limits of
-     * @return _limit The limit the bridge has
+     * @notice Enables, disables, or updates the bridge tax tiers
+     * @param _thresholds Array of thresholds for bridge tax tiers (must be sorted in ascending order)
+     * @param _basisPoints Array of basis points for each threshold tier
+     * @dev Passing empty arrays will disable bridge tax
      */
-
-    function mintingMaxLimitOf(address _bridge) public view returns (uint256 _limit) {
-        _limit = bridges[_bridge].minterParams.maxLimit;
+    function setBridgeTaxTiers(uint256[] memory _thresholds, uint256[] memory _basisPoints) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_thresholds.length == 0 && _basisPoints.length == 0) {
+            // Disable bridge tax by clearing the tiers
+            delete bridgeTaxTiers;
+        } else {
+            _setupBridgeTaxTiers(_thresholds, _basisPoints);
+        }
+        emit BridgeTaxTiersUpdated(_thresholds, _basisPoints);
     }
 
     /**
-     * @notice Returns the max limit of a bridge
-     *
-     * @param _bridge the bridge we are viewing the limits of
-     * @return _limit The limit the bridge has
+     * @notice Pauses the contract.
+     * @dev Only users with the PAUSE_ROLE can call this function.
      */
-
-    function burningMaxLimitOf(address _bridge) public view returns (uint256 _limit) {
-        _limit = bridges[_bridge].burnerParams.maxLimit;
+    function pause() public onlyRole(PAUSE_ROLE) {
+        _pause();
     }
 
     /**
-     * @notice Returns the current limit of a bridge
-     *
-     * @param _bridge the bridge we are viewing the limits of
-     * @return _limit The limit the bridge has
+     * @notice Unpauses the contract.
+     * @dev Only users with the PAUSE_ROLE can call this function.
      */
-
-    function mintingCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
-        _limit = _getCurrentLimit(
-            bridges[_bridge].minterParams.currentLimit,
-            bridges[_bridge].minterParams.maxLimit,
-            bridges[_bridge].minterParams.timestamp,
-            bridges[_bridge].minterParams.ratePerSecond
-        );
+    function unpause() public onlyRole(PAUSE_ROLE) {
+        _unpause();
     }
 
-    /**
-     * @notice Returns the current limit of a bridge
-     *
-     * @param _bridge the bridge we are viewing the limits of
-     * @return _limit The limit the bridge has
-     */
-
-    function burningCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
-        _limit = _getCurrentLimit(
-            bridges[_bridge].burnerParams.currentLimit,
-            bridges[_bridge].burnerParams.maxLimit,
-            bridges[_bridge].burnerParams.timestamp,
-            bridges[_bridge].burnerParams.ratePerSecond
-        );
-    }
+    /* ========== INTERNAL ========== */
 
     /**
      * @notice Burns tokens for a user using bridge limits
@@ -571,11 +581,10 @@ contract XERC20VotesUpgradeable is
      */
 
     function _burnWithCaller(address _caller, address _user, uint256 _amount) internal {
-        if (_caller != lockbox) {
-            uint256 _currentLimit = burningCurrentLimitOf(_caller);
-            if (_currentLimit < _amount) revert IXERC20_NotHighEnoughLimits();
-            _useBurnerLimits(_caller, _amount);
-        }
+        uint256 _currentLimit = burningCurrentLimitOf(_caller);
+        if (_currentLimit < _amount) revert LToken_NotHighEnoughLimits();
+        _useBurnerLimits(_caller, _amount);
+
         _burn(_user, _amount);
     }
 
@@ -588,43 +597,30 @@ contract XERC20VotesUpgradeable is
      */
 
     function _mintWithCaller(address _caller, address _user, uint256 _amount) internal {
-        if (_caller != lockbox) {
-            uint256 _currentLimit = mintingCurrentLimitOf(_caller);
-            if (_currentLimit < _amount) revert IXERC20_NotHighEnoughLimits();
-            _useMinterLimits(_caller, _amount);
+        uint256 _currentLimit = mintingCurrentLimitOf(_caller);
+        if (_currentLimit < _amount) revert LToken_NotHighEnoughLimits();
+        _useMinterLimits(_caller, _amount);
 
-            uint256 taxAmount = calculateBridgeTax(_amount);
-            if (taxAmount > 0) {
-                // Mint to user minus tax
-                _mint(_user, _amount - taxAmount);
+        uint256 taxAmount = calculateBridgeTax(_amount);
+        if (taxAmount > 0) {
+            // Mint to user minus tax
+            _mint(_user, _amount - taxAmount);
 
-                // Mint bridge tax amount to treasury
-                _mint(treasury, taxAmount);
+            // Mint bridge tax amount to treasury
+            _mint(treasury, taxAmount);
 
-                // Emit event for the tax collection
-                emit BridgeTaxCollected(_user, _amount, taxAmount);
-                return;
-            }
+            // Emit event for the tax collection
+            emit BridgeTaxCollected(_user, _amount, taxAmount);
+            return;
         }
 
         // Standard minting if no tax was applied or tax is disabled
         _mint(_user, _amount);
     }
 
-    // The following functions are overrides required by Solidity.
-    function nonces(address owner) public view override(ERC20PermitUpgradeable) returns (uint256) {
-        return super.nonces(owner);
-    }
+    function _beforeTokenTransfer(address from, address to, uint256 amount) internal override {
+        super._beforeTokenTransfer(from, to, amount);
 
-    function _afterTokenTransfer(address from, address to, uint256 amount) internal override(ERC20Upgradeable, ERC20VotesUpgradeable) {
-        super._afterTokenTransfer(from, to, amount);
-    }
-
-    function _mint(address account, uint256 amount) internal override(ERC20Upgradeable, ERC20VotesUpgradeable) {
-        super._mint(account, amount);
-    }
-
-    function _burn(address account, uint256 amount) internal override(ERC20Upgradeable, ERC20VotesUpgradeable) {
-        super._burn(account, amount);
+        if (paused()) revert Token_TransfersPaused();
     }
 }

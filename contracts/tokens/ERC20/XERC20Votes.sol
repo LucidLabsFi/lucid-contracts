@@ -41,6 +41,11 @@ contract XERC20Votes is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable2S
     error Token_InvalidParams();
 
     /**
+     * @notice Error thrown when new limits are too high.
+     */
+    error Token_LimitsTooHigh();
+
+    /**
      * @notice The duration it takes for the limits to fully replenish
      */
     uint256 private constant DURATION = 1 days;
@@ -306,6 +311,11 @@ contract XERC20Votes is ERC20, ERC20Burnable, ERC20Permit, ERC20Votes, Ownable2S
      * @param _bridge The address of the bridge we are setting the limits too
      */
     function setLimits(address _bridge, uint256 _mintingLimit, uint256 _burningLimit) external onlyOwner {
+        // Ensure new limits do not cause overflows
+        if (_mintingLimit > (type(uint256).max / 2) || _burningLimit > (type(uint256).max / 2)) {
+            revert Token_LimitsTooHigh();
+        }
+
         _changeMinterLimit(_bridge, _mintingLimit);
         _changeBurnerLimit(_bridge, _burningLimit);
         emit BridgeLimitsSet(_mintingLimit, _burningLimit, _bridge);

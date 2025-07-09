@@ -14,6 +14,11 @@ abstract contract BaseAssetBridge is AccessControl, Pausable {
     error Controller_Invalid_Params();
 
     /**
+     * @notice Error thrown when new limits are too high.
+     */
+    error Controller_LimitsTooHigh();
+
+    /**
      * @notice Emits when a limit is set
      *
      * @param _mintingLimit The updated minting limit we are setting to the bridge
@@ -187,6 +192,11 @@ abstract contract BaseAssetBridge is AccessControl, Pausable {
      * @param _bridge The address of the bridge we are setting the limits too
      */
     function _setLimits(address _bridge, uint256 _mintingLimit, uint256 _burningLimit) internal {
+        // Ensure new limits do not cause overflows
+        if (_mintingLimit > (type(uint256).max / 2) || _burningLimit > (type(uint256).max / 2)) {
+            revert Controller_LimitsTooHigh();
+        }
+
         _changeMinterLimit(_bridge, _mintingLimit);
         _changeBurnerLimit(_bridge, _burningLimit);
         emit BridgeLimitsSet(_mintingLimit, _burningLimit, _bridge);

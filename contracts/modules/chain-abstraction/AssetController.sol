@@ -42,6 +42,9 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @param transferId The unique identifier of the transfer.
     event TransferExecuted(bytes32 indexed transferId);
 
+    /// @notice Event emitted when transfers to a specific chain are paused or unpaused.
+    event TransfersPausedToChain(uint256 indexed chainId, bool paused);
+
     /// @notice Event emitted when a transfer is resent.
     /// @param transferId The unique identifier of the transfer.
     event TransferResent(bytes32 indexed transferId);
@@ -104,6 +107,9 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @notice Error thrown when an adapter resends a transfer that has already been delivered
     error Controller_TransferResentByAadapter();
 
+    /// @notice Error thrown when transfers to the destination chain are paused
+    error Controller_TransfersPausedToDestination();
+
     /// @notice Error thrown when the mint function call on the token fails
     error Controller_TokenMintFailed();
 
@@ -162,17 +168,20 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @dev Mapping of whitelisted bridge adapters that can be used for multi-bridge transfers. Used for both sending and receiving messages.
     mapping(address => bool) public multiBridgeAdapters;
 
+    /// @dev Indicates whether transfers to a given chain ID are currently paused
+    mapping(uint256 => bool) public transfersPausedTo;
+
     /// @dev Mapping of transfer id to received messages
     mapping(bytes32 => ReceivedTransfer) public receivedTransfers;
 
     /// @dev Mapping of transfers identified by their transfer ID.
-    mapping(bytes32 => Transfer) private _relayedTransfers;
+    mapping(bytes32 => Transfer) public relayedTransfers;
 
     /// @dev Mapping of transfer ID to destination chain ID.
-    mapping(bytes32 => uint256) private _destChainForMessage;
+    mapping(bytes32 => uint256) public destChainForMessage;
 
     /// @dev Mapping of transfer ID to the bridge adapter that has delivered the transfer.
-    mapping(bytes32 => mapping(address => bool)) private _deliveredBy;
+    mapping(bytes32 => mapping(address => bool)) public deliveredBy;
 
     /* ========== CONSTRUCTOR ========== */
 
@@ -253,14 +262,15 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
         if (recipient == address(0)) revert Controller_Invalid_Params();
         if (getControllerForChain(destChainId) == address(0)) revert Controller_Chain_Not_Supported();
+        if (transfersPausedTo[destChainId]) revert Controller_TransfersPausedToDestination();
         bytes32 transferId = calculateTransferId(destChainId);
         // Increment nonce used to create transfer id
         nonce++;
 
         // Store transfer data
-        _destChainForMessage[transferId] = destChainId;
+        destChainForMessage[transferId] = destChainId;
         Transfer memory transfer = Transfer(recipient, amount, unwrap, 1, transferId);
-        _relayedTransfers[transferId] = transfer;
+        relayedTransfers[transferId] = transfer;
 
         IBaseAdapter(bridgeAdapter).relayMessage{value: msg.value}(
             destChainId,
@@ -281,9 +291,9 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param options Additional params to be used by the adapter.
      */
     function resendTransfer(bytes32 transferId, address adapter, bytes memory options) public payable nonReentrant whenNotPaused {
-        uint256 destChainId = _destChainForMessage[transferId];
+        uint256 destChainId = destChainForMessage[transferId];
         if (destChainId == 0) revert Controller_UnknownTransfer();
-        Transfer memory transfer = _relayedTransfers[transferId];
+        Transfer memory transfer = relayedTransfers[transferId];
         if (transfer.threshold == 1) {
             uint256 _currentLimit = burningCurrentLimitOf(adapter);
             if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
@@ -340,6 +350,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         if (recipient == address(0)) revert Controller_Invalid_Params();
         if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
         if (getControllerForChain(destChainId) == address(0)) revert Controller_Chain_Not_Supported();
+        if (transfersPausedTo[destChainId]) revert Controller_TransfersPausedToDestination();
         // Create transfer id
         bytes32 transferId = calculateTransferId(destChainId);
         // Increment nonce used to create transfer id
@@ -347,8 +358,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         Transfer memory transfer = Transfer(recipient, amount, unwrap, minBridges, transferId);
 
         // Store transfer data
-        _destChainForMessage[transferId] = destChainId;
-        _relayedTransfers[transferId] = transfer;
+        destChainForMessage[transferId] = destChainId;
+        relayedTransfers[transferId] = transfer;
 
         _relayTransfer(transfer, destChainId, adapters, fees, options, msg.value);
         emit TransferCreated(transferId, destChainId, minBridges, _msgSender(), recipient, amount, unwrap);
@@ -368,11 +379,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         uint256[] memory fees,
         bytes[] memory options
     ) public payable nonReentrant whenNotPaused {
-        uint256 destChainId = _destChainForMessage[transferId];
+        uint256 destChainId = destChainForMessage[transferId];
         if (destChainId == 0) revert Controller_UnknownTransfer();
         if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
         _checkUniqueness(adapters);
-        Transfer memory transfer = _relayedTransfers[transferId];
+        Transfer memory transfer = relayedTransfers[transferId];
         // Resend doesn't uses the burn limits, since the asset is already burned and limits are global for all whitelisted multibridge adapters
         if (transfer.threshold > 1) {
             if (adapters.length != fees.length) revert Controller_Invalid_Params();
@@ -426,8 +437,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         } else {
             // Msg.sender needs to be a multibridge adapter
             if (!multiBridgeAdapters[msg.sender]) revert Controller_AdapterNotSupported();
-            if (_deliveredBy[transfer.transferId][msg.sender] == true) revert Controller_TransferResentByAadapter();
-            _deliveredBy[transfer.transferId][msg.sender] = true;
+            if (deliveredBy[transfer.transferId][msg.sender] == true) revert Controller_TransferResentByAadapter();
+            deliveredBy[transfer.transferId][msg.sender] = true;
 
             ReceivedTransfer memory receivedTransfer = receivedTransfers[transfer.transferId];
             // Multi-bridge transfer
@@ -511,6 +522,17 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      */
     function setControllerForChain(uint256[] memory chainId, address[] memory controller) public onlyRole(DEFAULT_ADMIN_ROLE) {
         _setControllerForChain(chainId, controller);
+    }
+
+    /**
+     * @notice Pauses or unpauses the initiation of new transfers to a specific chain.
+     * @dev Only the owner can call this function.
+     * @param _chainId The chain ID to pause or unpause transfers to.
+     * @param _pause True to pause transfers, false to unpause.
+     */
+    function pauseTransfersToChain(uint256 _chainId, bool _pause) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        transfersPausedTo[_chainId] = _pause;
+        emit TransfersPausedToChain(_chainId, _pause);
     }
 
     /**
