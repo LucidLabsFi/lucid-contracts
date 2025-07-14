@@ -160,7 +160,7 @@ contract LTokenUpgradeable is
      * @param _amount The amount of tokens being minted
      */
 
-    function mint(address _user, uint256 _amount) public {
+    function mint(address _user, uint256 _amount) public whenNotPaused {
         if (hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             _mint(_user, _amount);
         } else {
@@ -173,7 +173,7 @@ contract LTokenUpgradeable is
      * @param _to The address to mint tokens to.
      * @param _amount The amount of tokens to mint.
      */
-    function crosschainMint(address _to, uint256 _amount) external {
+    function crosschainMint(address _to, uint256 _amount) external whenNotPaused {
         _mintWithCaller(msg.sender, _to, _amount);
         emit CrosschainMint(_to, _amount, msg.sender);
     }
@@ -184,7 +184,7 @@ contract LTokenUpgradeable is
      * @param _user The address of the user who needs tokens burned
      * @param _amount The amount of tokens being burned
      */
-    function burn(address _user, uint256 _amount) public {
+    function burn(address _user, uint256 _amount) public whenNotPaused {
         _burnFrom(_user, _amount);
     }
 
@@ -194,7 +194,7 @@ contract LTokenUpgradeable is
      * @param _user The address of the user who needs tokens burned
      * @param _amount The amount of tokens being burned
      */
-    function burnFrom(address _user, uint256 _amount) public override {
+    function burnFrom(address _user, uint256 _amount) public override whenNotPaused {
         _burnFrom(_user, _amount);
     }
 
@@ -203,7 +203,7 @@ contract LTokenUpgradeable is
      * @dev Override the ERC20Burnable implementation to use bridge limits
      * @param _amount The amount of tokens being burned
      */
-    function burn(uint256 _amount) public override {
+    function burn(uint256 _amount) public override whenNotPaused {
         _burnWithCaller(msg.sender, msg.sender, _amount);
     }
 
@@ -213,7 +213,7 @@ contract LTokenUpgradeable is
      * @param _from The address to burn tokens from.
      * @param _amount The amount of tokens to burn.
      */
-    function crosschainBurn(address _from, uint256 _amount) external {
+    function crosschainBurn(address _from, uint256 _amount) external whenNotPaused {
         _spendAllowance(_from, msg.sender, _amount);
         _burnWithCaller(msg.sender, _from, _amount);
         emit CrosschainBurn(_from, _amount, msg.sender);
