@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.19;
 
-import {AssetController, IERC20} from "./AssetController.sol";
+import {AssetController, SafeERC20, IERC20} from "./AssetController.sol";
 
 /**
  * @title LockReleaseAssetController
  * @notice An implementation of the AssetController but instead of burning/minting tokens, it locks and releases ERC20s.
  */
 contract LockReleaseAssetController is AssetController {
+    using SafeERC20 for IERC20;
+
     /// @notice Event emitted when liquidity is added
     /// @param amount The amount of tokens added to the pool
     event LiquidityAdded(uint256 amount);
@@ -68,7 +70,7 @@ contract LockReleaseAssetController is AssetController {
         if (lockedTokens < _amount) revert Controller_NotEnoughTokensInPool();
 
         lockedTokens -= _amount;
-        IERC20(token).transfer(_to, _amount);
+        IERC20(token).safeTransfer(_to, _amount);
         emit LiquidityRemoved(_amount);
     }
 
@@ -79,7 +81,7 @@ contract LockReleaseAssetController is AssetController {
      * @param _amount The amount of tokens to be locked.
      */
     function _burn(address _from, uint256 _amount) internal override {
-        IERC20(token).transferFrom(_from, address(this), _amount);
+        IERC20(token).safeTransferFrom(_from, address(this), _amount);
         lockedTokens += _amount;
         emit LiquidityAdded(_amount);
     }

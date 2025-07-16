@@ -7,13 +7,15 @@ import {BaseAssetBridge} from "./BaseAssetBridge.sol";
 import {IBaseAdapter} from "./adapters/interfaces/IBaseAdapter.sol";
 import {IController} from "./interfaces/IController.sol";
 import {IFeeCollector} from "./interfaces/IFeeCollector.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title AssetController
  * @notice This contract is responsible for managing the minting and burning of a specified token across different chains, using a single or multiple bridge adapters.
  */
 contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IController {
+    using SafeERC20 for IERC20;
+
     /// @notice Event emitted when the token unwrapping setting is changed.
     event AllowTokenUnwrappingSet(bool allowUnwrapping);
 
@@ -333,8 +335,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         // Fee collection for multi-bridge transfers
         uint256 fee = feeCollector.quote(amount);
         if (fee > 0) {
-            IERC20(token).transferFrom(_msgSender(), address(this), fee);
-            IERC20(token).approve(address(feeCollector), fee);
+            IERC20(token).safeTransferFrom(_msgSender(), address(this), fee);
+            IERC20(token).safeApprove(address(feeCollector), fee);
             feeCollector.collect(token, fee);
         }
         _burn(_msgSender(), amount);
@@ -593,7 +595,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         bool success;
         if (BURN_SELECTOR == BURN_SELECTOR_SINGLE) {
             // burn(uint256) implementations expect msg.sender to hold the tokens
-            IERC20(token).transferFrom(account, address(this), amount);
+            IERC20(token).safeTransferFrom(account, address(this), amount);
             (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, amount));
         } else {
             (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, account, amount));
@@ -678,7 +680,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
                 // If approval failed or underlying token retrieval failed or allowance is insufficient
                 if (!success || !addrRetrSuccess || IERC20(token).allowance(address(this), lockbox) < amountToUnwrap) {
                     // Transfer tokens directly to recipient without unwrapping
-                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    IERC20(token).safeTransfer(recipient, amountToUnwrap);
                     return;
                 }
 
@@ -687,7 +689,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
                 // If underlying token is address(0), can't unwrap
                 if (underlyingToken == address(0)) {
-                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    IERC20(token).safeTransfer(recipient, amountToUnwrap);
                     return;
                 }
 
@@ -696,12 +698,12 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
                 // If withdrawal failed, send the wrapped tokens directly
                 if (!success) {
-                    IERC20(token).transfer(recipient, amountToUnwrap);
+                    IERC20(token).safeTransfer(recipient, amountToUnwrap);
                     return;
                 }
 
                 // Transfer unwrapped/underlying tokens to recipient
-                IERC20(underlyingToken).transfer(recipient, amountToUnwrap);
+                IERC20(underlyingToken).safeTransfer(recipient, amountToUnwrap);
                 return;
             }
         }
