@@ -92,12 +92,11 @@ contract PolymerAdapter is BaseAdapter, ReentrancyGuard {
         address originAdapter = trustedAdapters[originChainId];
 
         // Decode and verify indexed topics (dest chain id and dest adapter are the same)
-        (bytes32 eventHash, uint256 destChainId, address destAdapter, ) = abi.decode(topics, (bytes32, uint256, address, bytes32));
+        (bytes32 eventHash, uint256 destChainId, address destAdapter, bytes32 transferId) = abi.decode(topics, (bytes32, uint256, address, bytes32));
         if (((destAdapter != address(this)) || (destChainId != block.chainid)) || (originAdapter == address(0)) || (eventHash != RELAY_EVENT_HASH))
             revert Adapter_InvalidProof();
 
-        bytes32 proofHash = keccak256(proof); // Safe to hash only the proof and not combine it with sourceAdapter
-        _registerMessage(sourceAdapter, proofHash, abi.decode(unindexedData, (bytes)), originChainId);
+        _registerMessage(sourceAdapter, transferId, abi.decode(unindexedData, (bytes)), originChainId);
     }
 
     /**
