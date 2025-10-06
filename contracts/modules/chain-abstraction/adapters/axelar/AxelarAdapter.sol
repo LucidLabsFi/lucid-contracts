@@ -42,8 +42,8 @@ contract AxelarAdapter is BaseAdapter, AxelarExecutable {
         string[] memory domainIds,
         address owner
     ) BaseAdapter(name, minimumGas, treasury, fee, owner) AxelarExecutable(_bridgeRouter) {
+        if (_axelarGasService == address(0)) revert Adapter_InvalidParams();
         axlGasService = IAxelarGasService(_axelarGasService);
-        if (_bridgeRouter == address(0)) revert Adapter_InvalidParams();
         if (domainIds.length != chainIds.length) revert Adapter_InvalidParams();
         for (uint256 i = 0; i < domainIds.length; i++) {
             domainIdChains[domainIds[i]] = chainIds[i];

@@ -24,8 +24,11 @@ contract LockReleaseAssetController is AssetController {
     /// @notice Error thrown when there are not enough tokens in the pool
     error Controller_NotEnoughTokensInPool();
 
-    /// @notice The amount of tokens locked in the pool
-    uint256 public lockedTokens;
+    /// @notice Error thrown when a transfer fails
+    error Controller_TransferFailed();
+
+    /// @notice Error thrown when a zero address is encountered
+    error Controller_ZeroAddress();
 
     /**
      * @notice Initializes the contract with the given parameters.
@@ -61,15 +64,35 @@ contract LockReleaseAssetController is AssetController {
     }
 
     /**
+     * @notice Allows the admin to rescue tokens stuck in the contract.
+     * @param token The address of the token to rescue.
+     * @param to The address to send the rescued tokens to.
+     * @param amount The amount of tokens to rescue.
+     */
+    function rescueTokens(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (to == address(0)) revert Controller_ZeroAddress();
+        IERC20(token).safeTransfer(to, amount);
+    }
+
+    /**
+     * @notice Allows the admin to rescue ETH stuck in the contract.
+     * @param to The address to send the rescued ETH to.
+     * @param amount The amount of ETH to rescue.
+     */
+    function rescueETH(address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (to == address(0)) revert Controller_ZeroAddress();
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) revert Controller_TransferFailed();
+    }
+
+    /**
      * @notice Releases the given amount of tokens from the pool.
      * @dev Overwides the default mint implementation to release tokens from the pool.
      * @param _to The address to which the tokens will be sent.
      * @param _amount The amount of tokens to be sent.
      */
     function _mint(address _to, uint256 _amount) internal override {
-        if (lockedTokens < _amount) revert Controller_NotEnoughTokensInPool();
-
-        lockedTokens -= _amount;
+        if (IERC20(token).balanceOf(address(this)) < _amount) revert Controller_NotEnoughTokensInPool();
         IERC20(token).safeTransfer(_to, _amount);
         emit LiquidityRemoved(_amount);
     }
@@ -82,7 +105,6 @@ contract LockReleaseAssetController is AssetController {
      */
     function _burn(address _from, uint256 _amount) internal override {
         IERC20(token).safeTransferFrom(_from, address(this), _amount);
-        lockedTokens += _amount;
         emit LiquidityAdded(_amount);
     }
 

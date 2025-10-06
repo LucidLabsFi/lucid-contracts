@@ -19,6 +19,7 @@ contract AxelarMock is IAxelarGasService {
         bytes callData;
     }
 
+    bool public validatingContractCalls;
     uint256 public counter;
     mapping(uint256 => receivedMessage) public requests;
     // map orign sender (msg.sender) to domain id of the same chain
@@ -29,6 +30,7 @@ contract AxelarMock is IAxelarGasService {
 
     constructor() {
         counter = 0;
+        validatingContractCalls = true;
     }
 
     function setOriginDomainId(address origin, string memory domainId) external {
@@ -53,13 +55,17 @@ contract AxelarMock is IAxelarGasService {
         IAxelarExecutable(destination).execute(bytes32(id), request.originDomainId, AddressToString.toString(request.originSender), request.callData);
     }
 
+    function setValidatingContractCalls(bool validating) external {
+        validatingContractCalls = validating;
+    }
+
     function validateContractCall(
         bytes32 commandId,
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes32 payloadHash
     ) external returns (bool) {
-        return true;
+        return validatingContractCalls;
     }
 
     // Axelar Gas Service

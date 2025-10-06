@@ -52,7 +52,7 @@ abstract contract BaseAdapter is IBaseAdapter, Pausable, AccessControl {
 
     bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
 
-    /// @notice Fee paid to protocol in basis points (3 decimal places)
+    /// @notice Fee paid to protocol in basis points (one percent equals 1000)
     uint48 public protocolFee;
 
     /// @notice Decimal value for fee calculations (one percent equals 1000)
@@ -73,6 +73,7 @@ abstract contract BaseAdapter is IBaseAdapter, Pausable, AccessControl {
     /// @param treasury Address where the protocol fees are sent
     /// @param fee Fee to be charged by the protocol in basis points
     constructor(string memory name, uint256 minimumGas, address treasury, uint48 fee, address owner) {
+        if (fee > FEE_DECIMALS || treasury == address(0)) revert Adapter_InvalidParams();
         _setupRole(DEFAULT_ADMIN_ROLE, owner);
         _setupRole(PAUSE_ROLE, owner);
         minGas = minimumGas;
@@ -153,7 +154,7 @@ abstract contract BaseAdapter is IBaseAdapter, Pausable, AccessControl {
     /// @param fee The new protocol fee in basis points
     /// @param treasury The address where the protocol fees will be sent
     function setProtocolFee(uint48 fee, address treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (fee > 5e3) revert Adapter_InvalidParams();
+        if (fee > FEE_DECIMALS || treasury == address(0)) revert Adapter_InvalidParams();
         protocolFee = fee;
         protocolFeeRecipient = treasury;
         emit ProtocolFeeSet(fee);

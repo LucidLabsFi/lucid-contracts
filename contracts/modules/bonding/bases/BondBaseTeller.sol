@@ -52,25 +52,27 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     event CreateFeeDiscountSet(uint48 discount);
     event ReferrerFeeSet(address indexed referrer, uint48 fee);
     event ProtocolFeeForIssuerSet(address indexed issuer, uint48 fee);
+    event ProtocolFeeForIssuerReset(address indexed issuer);
     event ProtocolFeeRecipientForIssuerSet(address indexed issuer, address indexed recipient);
 
     /* ========== STATE VARIABLES ========== */
 
-    /// @notice Fee paid to the referrer in basis points (3 decimals). Set by the guardian, must be less than or equal to 25% (25e3).
+    /// @notice Fee paid to the referrer in basis points (one percent equals 1000). Set by the guardian, must be less than or equal to 25% (25e3).
     /// @dev There are some situations where the fees may round down to zero if quantity of baseToken
     ///      is < 1e5 wei (can happen with big price differences on small decimal tokens). This is purely
     ///      a theoretical edge case, as the bond amount would not be practical.
     uint48 public referrerFee;
 
-    /// @notice Fee paid to protocol in basis points (3 decimal places).
+    /// @notice Fee paid to protocol in basis points (one percent equals 1000).
     uint48 public protocolFee;
 
-    /// @notice 'Create' function fee discount in basis points (3 decimal places). Amount standard fee is reduced by for partners who just want to use the 'create' function to issue bond tokens.
+    /// @notice 'Create' function fee discount in basis points (one percent equals 1000). Amount standard fee is reduced by for partners who just want to use the 'create' function to issue bond tokens.
     uint48 public createFeeDiscount;
 
     uint48 public constant FEE_DECIMALS = 1e5; // one percent equals 1000.
 
     mapping(address => uint48) private _protocolFeesForIssuers;
+    mapping(address => bool) private _protocolFeesSetForIssuers;
 
     mapping(address => address) private _protocolFeeRecipients;
 
@@ -128,7 +130,15 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     function setProtocolFeeForIssuer(address issuer_, uint48 fee_) external override requiresAuth {
         if (fee_ > 25e3) revert Teller_InvalidParams();
         _protocolFeesForIssuers[issuer_] = fee_;
+        _protocolFeesSetForIssuers[issuer_] = true;
         emit ProtocolFeeForIssuerSet(issuer_, fee_);
+    }
+
+    /// @inheritdoc IBondTeller
+    function clearProtocolFeeForIssuer(address issuer_) external override requiresAuth {
+        _protocolFeesForIssuers[issuer_] = 0;
+        _protocolFeesSetForIssuers[issuer_] = false;
+        emit ProtocolFeeForIssuerReset(issuer_);
     }
 
     /// @inheritdoc IBondTeller
@@ -161,13 +171,17 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     }
 
     function getProtocolFeeFor(address _issuer) public view returns (uint48) {
-        uint48 issuerFee = _protocolFeesForIssuers[_issuer];
-        if (issuerFee != 0) {
-            return issuerFee;
+        if (_protocolFeesSetForIssuers[_issuer]) {
+            return _protocolFeesForIssuers[_issuer];
         } else {
             // default to protocolFee if no issuer fee is set
             return protocolFee;
         }
+    }
+
+    /// @inheritdoc IBondTeller
+    function isProtocolFeeSetForIssuer(address issuer_) external view returns (bool) {
+        return _protocolFeesSetForIssuers[issuer_];
     }
 
     function getProtocolFeeRecipientFor(address _issuer) public view returns (address) {

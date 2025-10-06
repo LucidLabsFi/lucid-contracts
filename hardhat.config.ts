@@ -2,7 +2,15 @@ import * as dotenv from "dotenv";
 
 import {HardhatUserConfig} from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-import "@nomiclabs/hardhat-ethers";
+
+// import "@nomicfoundation/hardhat-chai-matchers";
+// import "@nomiclabs/hardhat-ethers";
+// import "@typechain/hardhat";
+// import "hardhat-gas-reporter";
+// import "solidity-coverage";
+
+// import "@nomicfoundation/hardhat-verify";
+
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-contract-sizer";
 import "hardhat-change-network";
@@ -20,8 +28,7 @@ if (process.env.PRIVATE_KEY) {
         mnemonic: process.env.MNEMONIC,
     };
 }
-
-const config: HardhatUserConfig = {
+const config = {
     solidity: {
         compilers: [
             {
@@ -161,7 +168,7 @@ const config: HardhatUserConfig = {
         },
         baseSepolia: {
             url: process.env.BASE_SEPOLIA_URL || "https://sepolia.base.org",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 84532,
         },
         lineaSepolia: {
@@ -221,7 +228,6 @@ const config: HardhatUserConfig = {
             accounts: accounts,
             chainId: 59144,
             timeout: 0,
-            gasMultiplier: 1.3,
         },
         blast: {
             url: process.env.BLAST_MAINNET_URL || "",
@@ -289,7 +295,7 @@ const config: HardhatUserConfig = {
             accounts: accounts,
             chainId: 999,
             timeout: 0,
-            gasMultiplier: 1.3,
+            // gasMultiplier: 1.3,
         },
         mantle: {
             url: process.env.MANTLE_MAINNET_URL,
@@ -298,37 +304,98 @@ const config: HardhatUserConfig = {
             timeout: 0,
             gasMultiplier: 1.3,
         },
+        redBelly: {
+            url: "https://governors.mainnet.redbelly.network",
+            accounts: accounts,
+            chainId: 151,
+            timeout: 0,
+        },
+        boba: {
+            url: "https://mainnet.boba.network",
+            accounts: accounts,
+            chainId: 288,
+            timeout: 0,
+            gasPrice: 100000,
+        },
+        saakuru: {
+            url: "https://rpc.saakuru.network/",
+            accounts: accounts,
+            chainId: 7225878,
+            timeout: 0,
+            gasPrice: 0,
+        },
+        bnb: {
+            url: "https://bsc-dataseed1.bnbchain.org",
+            accounts: accounts,
+            chainId: 56,
+            timeout: 0,
+        },
+        gnosis: {
+            url: "https://rpc.gnosischain.com",
+            accounts: accounts,
+            chainId: 100,
+            timeout: 0,
+        },
+        bsquared: {
+            url: "https://rpc.ankr.com/b2",
+            accounts: accounts,
+            chainId: 223,
+            timeout: 0,
+        },
+        plume: {
+            url: "https://rpc.plume.org",
+            accounts: accounts,
+            chainId: 98866,
+            timeout: 0,
+        },
+
+        xoTestnet: {
+            url: "https://testnet-rpc-1.xo.market",
+            accounts: accounts,
+            chainId: 1000101,
+            timeout: 0,
+            gasPrice: 200,
+            gasLimit: 7000000000,
+        },
     },
     etherscan: {
         apiKey: {
             goerli: process.env.ETHERSCAN_API_KEY || "",
-            polygonAmoy: process.env.POLYGONSCAN_API_KEY || "",
-            polygonZKtestnet: process.env.POLYGONSCANZK_API_KEY || "",
-            lineaSepolia: process.env.LINEASCAN_API_KEY || "",
-            optimismSepolia: process.env.OPTIMISMSCAN_API_KEY || "",
-            baseSepolia: process.env.BASESCAN_API_KEY || "",
-            arbitrumSepolia: process.env.ARBISCAN_API_KEY || "",
+            polygonAmoy: process.env.ETHERSCAN_API_KEY || "",
+            polygonZKtestnet: process.env.ETHERSCAN_API_KEY || "",
+            lineaSepolia: process.env.ETHERSCAN_API_KEY || "",
+            optimismSepolia: process.env.ETHERSCAN_API_KEY || "",
+            baseSepolia: process.env.ETHERSCAN_API_KEY || "",
+            arbitrumSepolia: process.env.ETHERSCAN_API_KEY || "",
             sepolia: process.env.ETHERSCAN_API_KEY || "",
             ethereum: process.env.ETHERSCAN_API_KEY || "",
-            arbitrum: process.env.ARBISCAN_API_KEY || "",
-            optimism: process.env.OPTIMISMSCAN_API_KEY || "",
-            base: process.env.BASESCAN_API_KEY || "",
-            linea: process.env.LINEASCAN_API_KEY || "",
-            blast: process.env.BLASTSCAN_API_KEY || "",
-            polygon: process.env.POLYGONSCAN_API_KEY || "",
+            arbitrum: process.env.ETHERSCAN_API_KEY || "",
+            optimism: process.env.ETHERSCAN_API_KEY || "",
+            base: process.env.ETHERSCAN_API_KEY || "",
+            linea: process.env.ETHERSCAN_API_KEY || "",
+            blast: process.env.ETHERSCAN_API_KEY || "",
+            polygon: process.env.ETHERSCAN_API_KEY || "",
             fraxtal: process.env.FRAXSCAN_API_KEY || "",
             unichain: "empty", // No API key for Unichain
-            hyperliquid: "empty", // No API key for hyperliquid
-            berachain: process.env.BERACHAIN_API_KEY || "",
-            sonic: process.env.SONIC_API_KEY || "",
-            mantle: process.env.MANTLESCAN_API_KEY || "",
+            hyperliquid: process.env.ETHERSCAN_API_KEY, // No API key for hyperliquid
+            redBelly: "empty", // No API key for RedBelly
+            boba: "empty", // No API key for Boba
+            saakuru: "empty",
+            bsquared: "empty", // No API key for B-Squared
+            plume: "empty", // No API key for Plume
+            xoTestnet: "empty", // No API key for XO Testnet
+            gnosis: process.env.ETHERSCAN_API_KEY,
+            bnb: process.env.ETHERSCAN_API_KEY,
+            berachain: process.env.ETHERSCAN_API_KEY || "",
+            sonic: process.env.ETHERSCAN_API_KEY || "",
+            mantle: process.env.ETHERSCAN_API_KEY || "",
         },
         customChains: [
             {
                 network: "optimism",
                 chainId: 10,
                 urls: {
-                    apiURL: "https://api-optimistic.etherscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=10",
                     browserURL: "https://optimistic.etherscan.io/",
                 },
             },
@@ -336,7 +403,7 @@ const config: HardhatUserConfig = {
                 network: "base",
                 chainId: 8453,
                 urls: {
-                    apiURL: "https://api.basescan.org/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=8453",
                     browserURL: "https://basescan.org/",
                 },
             },
@@ -344,7 +411,7 @@ const config: HardhatUserConfig = {
                 network: "blast",
                 chainId: 81457,
                 urls: {
-                    apiURL: "https://api.blastscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=81457",
                     browserURL: "https://blastscan.io/",
                 },
             },
@@ -352,7 +419,7 @@ const config: HardhatUserConfig = {
                 network: "polygon",
                 chainId: 137,
                 urls: {
-                    apiURL: "https://api.polygonscan.com/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=137",
                     browserURL: "https://polygonscan.com/",
                 },
             },
@@ -360,7 +427,7 @@ const config: HardhatUserConfig = {
                 network: "linea",
                 chainId: 59144,
                 urls: {
-                    apiURL: "https://api.lineascan.build/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=59144",
                     browserURL: "https://lineascan.build/",
                 },
             },
@@ -368,7 +435,7 @@ const config: HardhatUserConfig = {
                 network: "ethereum",
                 chainId: 1,
                 urls: {
-                    apiURL: "https://api.etherscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=1",
                     browserURL: "https://etherscan.io/",
                 },
             },
@@ -376,7 +443,7 @@ const config: HardhatUserConfig = {
                 network: "arbitrum",
                 chainId: 42161,
                 urls: {
-                    apiURL: "https://api.arbiscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=42161",
                     browserURL: "https://arbiscan.io/",
                 },
             },
@@ -392,7 +459,7 @@ const config: HardhatUserConfig = {
                 network: "baseSepolia",
                 chainId: 84532,
                 urls: {
-                    apiURL: "https://api-sepolia.basescan.org/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=84532",
                     browserURL: "https://sepolia.basescan.org/",
                 },
             },
@@ -408,7 +475,7 @@ const config: HardhatUserConfig = {
                 network: "berachain",
                 chainId: 80094,
                 urls: {
-                    apiURL: "https://api.berascan.com/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=80094",
                     browserURL: "https://berascan.com/",
                 },
             },
@@ -416,7 +483,7 @@ const config: HardhatUserConfig = {
                 network: "sonic",
                 chainId: 146,
                 urls: {
-                    apiURL: "https://api.sonicscan.org/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=146",
                     browserURL: "https://sonicscan.org/",
                 },
             },
@@ -424,7 +491,7 @@ const config: HardhatUserConfig = {
                 network: "hyperliquid",
                 chainId: 999,
                 urls: {
-                    apiURL: "https://www.hyperscan.com/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=999",
                     browserURL: "https://www.hyperscan.com/",
                 },
             },
@@ -432,10 +499,106 @@ const config: HardhatUserConfig = {
                 network: "mantle",
                 chainId: 5000,
                 urls: {
-                    apiURL: "https://api.mantlescan.xyz/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=5000",
                     browserURL: "https://mantlescan.xyz/",
                 },
             },
+            {
+                network: "redBelly",
+                chainId: 151,
+                urls: {
+                    apiURL: "https://api.routescan.io/v2/network/mainnet/evm/151/etherscan",
+                    browserURL: "https://redbelly.routescan.io",
+                },
+            },
+            {
+                network: "boba",
+                chainId: 288,
+                urls: {
+                    apiURL: "https://api.routescan.io/v2/network/mainnet/evm/288/etherscan",
+                    browserURL: "https://boba.routescan.io",
+                },
+            },
+            {
+                network: "saakuru",
+                chainId: 7225878,
+                urls: {
+                    apiURL: "https://explorer.saakuru.network/api",
+                    browserURL: "https://explorer.saakuru.network",
+                },
+            },
+            {
+                network: "bnb",
+                chainId: 56,
+                urls: {
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=56",
+                    browserURL: "https://bscscan.com/",
+                },
+            },
+            {
+                network: "gnosis",
+                chainId: 100,
+                urls: {
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=100",
+                    browserURL: "https://gnosisscan.io/",
+                },
+            },
+            {
+                network: "bsquared",
+                chainId: 223,
+                urls: {
+                    apiURL: "https://mainnet-backend.bsquared.network/api",
+                    browserURL: "https://mainnet-blockscout.bsquared.network/",
+                },
+            },
+            {
+                network: "plume",
+                chainId: 98866,
+                urls: {
+                    apiURL: "https://explorer.plume.org/api",
+                    browserURL: "https://explorer.plume.org/",
+                },
+            },
+            {
+                network: "xoTestnet",
+                chainId: 1000101,
+                urls: {
+                    apiURL: "https://explorer-testnet.xo.market/api",
+                    browserURL: "hhttps://explorer-testnet.xo.market/",
+                },
+            },
+            // {
+            //     network: "polygonAmoy",
+            //     chainId: 80002,
+            //     urls: {
+            //         apiURL: "https://api-amoy.polygonscan.com/api",
+            //         browserURL: "https://amoy.polygonscan.com/",
+            //     },
+            // },
+            // {
+            //     network: "polygonAmoy",
+            //     chainId: 80002,
+            //     urls: {
+            //         apiURL: "https://api-amoy.polygonscan.com/api",
+            //         browserURL: "https://amoy.polygonscan.com/",
+            //     },
+            // },
+            // {
+            //     network: "polygonAmoy",
+            //     chainId: 80002,
+            //     urls: {
+            //         apiURL: "https://api-amoy.polygonscan.com/api",
+            //         browserURL: "https://amoy.polygonscan.com/",
+            //     },
+            // },
+            // {
+            //     network: "polygonAmoy",
+            //     chainId: 80002,
+            //     urls: {
+            //         apiURL: "https://api-amoy.polygonscan.com/api",
+            //         browserURL: "https://amoy.polygonscan.com/",
+            //     },
+            // },
             {
                 network: "polygonAmoy",
                 chainId: 80002,
@@ -480,12 +643,17 @@ const config: HardhatUserConfig = {
                 network: "sepolia",
                 chainId: 11155111,
                 urls: {
-                    apiURL: "https://api-sepolia.etherscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=11155111",
                     browserURL: "https://sepolia.etherscan.io",
                 },
             },
         ],
     },
+    // sourcify: {
+    //     // Disabled by default
+    //     // Doesn't need an API key
+    //     enabled: true,
+    // },
     // docgen: {
     //     path: "./docs",
     //     clear: true,
