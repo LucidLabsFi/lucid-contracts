@@ -9,6 +9,7 @@ describe("LockReleaseAssetController Tests", () => {
     let user1Signer: SignerWithAddress;
     let treasury: SignerWithAddress;
     let pauser: SignerWithAddress;
+    let yieldManager: SignerWithAddress;
     let treasuryAddress: string;
     let sourceToken: Contract;
     let destToken: Contract;
@@ -23,6 +24,9 @@ describe("LockReleaseAssetController Tests", () => {
     let amountToBridge: any;
     let transferId: string;
     let bridgeOptions: any;
+    let strategy: Contract;
+    let aavePoolMock: Contract;
+    let YieldStrategy: any;
 
     const protocolFee = 5000;
     const multiBridgeFee = 500; // 0.5%
@@ -32,12 +36,14 @@ describe("LockReleaseAssetController Tests", () => {
 
     const replenishDuration = 43200; // 12 hours
     beforeEach(async () => {
-        [ownerSigner, user1Signer, treasury, pauser] = await ethers.getSigners();
-        // upgrades.silenceWarnings();
+        upgrades.silenceWarnings();
+        [ownerSigner, user1Signer, treasury, pauser, yieldManager] = await ethers.getSigners();
         treasuryAddress = treasury.address;
 
         // Chain 50 - sourceController, BridgeAdapter
         // Chain 100 - destController, BridgeAdapter
+
+        YieldStrategy = await ethers.getContractFactory("AaveYieldStrategy");
 
         // Deploy Native Token
         const Token = await ethers.getContractFactory("USDTMock");
@@ -75,7 +81,8 @@ describe("LockReleaseAssetController Tests", () => {
             [],
             [],
             [],
-            ["0x00000000", "0x00000000"]
+            ["0x00000000", "0x00000000"],
+            ethers.constants.AddressZero
         );
 
         // Deploy Destination AssetController contract
@@ -167,7 +174,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -183,7 +191,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -198,7 +207,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [],
                 [],
                 [],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.multiBridgeAdapters(sourceBridgeAdapter.address)).to.be.equal(true);
         });
@@ -213,7 +223,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [],
                 [],
                 [],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.getControllerForChain(50)).to.be.equal(ownerSigner.address);
             expect(await controller.getControllerForChain(100)).to.be.equal(ownerSigner.address);
@@ -230,7 +241,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [],
                 [],
                 [],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.MINT_SELECTOR()).to.be.equal("0x00000000");
             expect(await controller.BURN_SELECTOR()).to.be.equal("0x00000000");
@@ -247,7 +259,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -263,7 +276,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [ownerSigner.address],
                     [],
                     [],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -279,7 +293,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [ownerSigner.address],
                     [],
                     [200, 100],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -295,7 +310,8 @@ describe("LockReleaseAssetController Tests", () => {
                     [ownerSigner.address],
                     [1000],
                     [200, 100],
-                    ["0x00000000", "0x00000000"]
+                    ["0x00000000", "0x00000000"],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -310,7 +326,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [ownerSigner.address],
                 [1000],
                 [200],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             const bridgeParams = await controller.bridges(ownerSigner.address);
             expect(bridgeParams.minterParams.currentLimit).to.be.equal(1000);
@@ -327,7 +344,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [ownerSigner.address],
                 [1000],
                 [200],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), user1Signer.address)).to.equal(true);
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), ownerSigner.address)).to.equal(false);
@@ -343,7 +361,8 @@ describe("LockReleaseAssetController Tests", () => {
                 [ownerSigner.address],
                 [1000],
                 [200],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), pauser.address)).to.equal(true);
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), ownerSigner.address)).to.equal(false);
@@ -359,10 +378,70 @@ describe("LockReleaseAssetController Tests", () => {
                 [ownerSigner.address],
                 [1000],
                 [200],
-                ["0x00000000", "0x00000000"]
+                ["0x00000000", "0x00000000"],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), user1Signer.address)).to.equal(true);
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), ownerSigner.address)).to.equal(false);
+        });
+        describe("yield strategy", () => {
+            beforeEach(async () => {
+                const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+                aavePoolMock = await AavePoolMock.deploy(ownerSigner.address, sourceToken.address, "Aave Test Token", "aTEST");
+
+                // Any non-zero address as the controller would work at this stage
+                strategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [aavePoolMock.address, sourceToken.address, ownerSigner.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+            });
+            it("should set the yield strategy contract address", async () => {
+                const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
+                const controller = await AssetController.deploy(
+                    [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    3600,
+                    2,
+                    [],
+                    [],
+                    [ownerSigner.address],
+                    [1000],
+                    [200],
+                    ["0x00000000", "0x00000000"],
+                    strategy.address
+                );
+                expect(await controller.yieldStrategy()).to.be.equal(strategy.address);
+            });
+            it("should revert if the asset in the yield strategy is other than the controller's token", async () => {
+                // Mock - set a different underlying asset in Aave pool for aave yield strategy deployment to succeed
+                await aavePoolMock.setUnderlyingAsset(destToken.address);
+                // Any non-zero address as the controller would work at this stage
+                strategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [aavePoolMock.address, destToken.address, ownerSigner.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
+                await expect(
+                    AssetController.deploy(
+                        [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                        3600,
+                        2,
+                        [],
+                        [],
+                        [ownerSigner.address],
+                        [1000],
+                        [200],
+                        ["0x00000000", "0x00000000"],
+                        strategy.address
+                    )
+                ).to.be.revertedWithCustomError(AssetController, "Controller_InvalidStrategy");
+            });
         });
     });
     describe("transfer To - single bridge", () => {
@@ -568,7 +647,6 @@ describe("LockReleaseAssetController Tests", () => {
             await expect(sourceController.connect(user1Signer).setTokenUnwrapping(true)).to.be.reverted;
         });
     });
-    // TODO rescue tokens and rescue eth tests
     describe("rescueTokens", () => {
         let erc20: Contract;
         beforeEach(async () => {
@@ -630,6 +708,524 @@ describe("LockReleaseAssetController Tests", () => {
             await expect(
                 sourceController.connect(ownerSigner).rescueETH(ethers.constants.AddressZero, ethers.utils.parseEther("0.01"))
             ).to.be.revertedWithCustomError(sourceController, "Controller_ZeroAddress");
+        });
+    });
+
+    describe("Yield Strategy Functions", () => {
+        beforeEach(async () => {
+            // Deploy AavePoolMock
+            const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+            aavePoolMock = await AavePoolMock.deploy(ownerSigner.address, sourceToken.address, "Aave Test Token", "aTEST");
+
+            // Deploy YieldStrategy with temporary controller address
+            strategy = await upgrades.deployProxy(
+                YieldStrategy,
+                [aavePoolMock.address, sourceToken.address, sourceController.address, ownerSigner.address],
+                {
+                    initializer: "initialize",
+                }
+            );
+
+            // Set the strategy in the controller
+            await sourceController.connect(ownerSigner).setYieldStrategy(strategy.address);
+
+            // Grant YIELD_MANAGER_ROLE to yieldManager
+            const yieldManagerRole = await sourceController.YIELD_MANAGER_ROLE();
+            await sourceController.connect(ownerSigner).grantRole(yieldManagerRole, yieldManager.address);
+
+            // Transfer tokens to controller for strategy operations
+            await sourceToken.connect(ownerSigner).transfer(sourceController.address, ethers.utils.parseEther("10000"));
+        });
+
+        describe("setYieldStrategy", () => {
+            it("should set the yield strategy", async () => {
+                const newStrategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [aavePoolMock.address, sourceToken.address, sourceController.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                await expect(sourceController.connect(ownerSigner).setYieldStrategy(newStrategy.address))
+                    .to.emit(sourceController, "YieldStrategySet")
+                    .withArgs(strategy.address, newStrategy.address);
+
+                expect(await sourceController.yieldStrategy()).to.equal(newStrategy.address);
+            });
+
+            it("should withdraw all principal from old strategy when setting new strategy", async () => {
+                const depositAmount = ethers.utils.parseEther("1000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const principalBefore = await strategy.getPrincipal();
+                expect(principalBefore).to.equal(depositAmount);
+
+                // Create new strategy
+                const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+                const newAavePoolMock = await AavePoolMock.deploy(ownerSigner.address, sourceToken.address, "Aave Test Token 2", "aTEST2");
+
+                const newStrategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [newAavePoolMock.address, sourceToken.address, sourceController.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+                await sourceController.connect(ownerSigner).setYieldStrategy(newStrategy.address);
+
+                // Old strategy should have zero principal
+                const principalAfter = await strategy.getPrincipal();
+                expect(principalAfter).to.equal(0);
+
+                // Controller should have received the principal back
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.equal(depositAmount);
+            });
+
+            it("should allow disabling strategy by setting to zero address", async () => {
+                const depositAmount = ethers.utils.parseEther("500");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                await expect(sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero))
+                    .to.emit(sourceController, "YieldStrategySet")
+                    .withArgs(strategy.address, ethers.constants.AddressZero);
+
+                expect(await sourceController.yieldStrategy()).to.equal(ethers.constants.AddressZero);
+
+                // Principal should have been withdrawn
+                const principalAfter = await strategy.getPrincipal();
+                expect(principalAfter).to.equal(0);
+            });
+
+            it("should revert if new strategy asset does not match controller token", async () => {
+                const Token = await ethers.getContractFactory("USDTMock");
+                const wrongToken = await Token.deploy("Wrong Token", "WRONG");
+
+                const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+                const wrongAavePoolMock = await AavePoolMock.deploy(ownerSigner.address, wrongToken.address, "Aave Wrong Token", "aWRONG");
+
+                const wrongStrategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [wrongAavePoolMock.address, wrongToken.address, sourceController.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                await expect(sourceController.connect(ownerSigner).setYieldStrategy(wrongStrategy.address)).to.be.revertedWithCustomError(
+                    sourceController,
+                    "Controller_InvalidStrategy"
+                );
+            });
+
+            it("should revert if not called by admin", async () => {
+                const defaultAdminRole = await sourceController.DEFAULT_ADMIN_ROLE();
+                await expect(sourceController.connect(user1Signer).setYieldStrategy(ethers.constants.AddressZero)).to.be.revertedWith(
+                    `AccessControl: account ${user1Signer.address.toLowerCase()} is missing role ${defaultAdminRole}`
+                );
+            });
+
+            it("should handle setting strategy when old strategy has no principal", async () => {
+                // Don't deposit anything, just change strategy
+                const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+                const newAavePoolMock = await AavePoolMock.deploy(ownerSigner.address, sourceToken.address, "Aave Test Token 2", "aTEST2");
+
+                const newStrategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [newAavePoolMock.address, sourceToken.address, sourceController.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                await expect(sourceController.connect(ownerSigner).setYieldStrategy(newStrategy.address))
+                    .to.emit(sourceController, "YieldStrategySet")
+                    .withArgs(strategy.address, newStrategy.address);
+            });
+        });
+
+        describe("deployToStrategy", () => {
+            it("should deposit funds to the strategy", async () => {
+                const depositAmount = ethers.utils.parseEther("1000");
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                await expect(sourceController.connect(yieldManager).deployToStrategy(depositAmount))
+                    .to.emit(sourceController, "FundsDeployedToStrategy")
+                    .withArgs(depositAmount);
+
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceBefore.sub(controllerBalanceAfter)).to.equal(depositAmount);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(depositAmount);
+            });
+
+            it("should revert if strategy is not set", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+
+                await expect(sourceController.connect(yieldManager).deployToStrategy(ethers.utils.parseEther("100"))).to.be.revertedWithCustomError(
+                    sourceController,
+                    "Controller_InvalidStrategy"
+                );
+            });
+
+            it("should revert if controller has insufficient liquidity", async () => {
+                const excessAmount = ethers.utils.parseEther("20000");
+
+                await expect(sourceController.connect(yieldManager).deployToStrategy(excessAmount)).to.be.revertedWithCustomError(
+                    sourceController,
+                    "Controller_InsufficientLiquidity"
+                );
+            });
+
+            it("should revert if not called by yield manager", async () => {
+                const yieldManagerRole = await sourceController.YIELD_MANAGER_ROLE();
+                await expect(sourceController.connect(user1Signer).deployToStrategy(ethers.utils.parseEther("100"))).to.be.revertedWith(
+                    `AccessControl: account ${user1Signer.address.toLowerCase()} is missing role ${yieldManagerRole}`
+                );
+            });
+
+            it("should handle deposits up to full controller balance", async () => {
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+
+                await expect(sourceController.connect(yieldManager).deployToStrategy(controllerBalance))
+                    .to.emit(sourceController, "FundsDeployedToStrategy")
+                    .withArgs(controllerBalance);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(controllerBalance);
+            });
+        });
+
+        describe("withdrawFromStrategy", () => {
+            const depositAmount = ethers.utils.parseEther("2000");
+
+            beforeEach(async () => {
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+            });
+
+            it("should withdraw funds from the strategy", async () => {
+                const withdrawAmount = ethers.utils.parseEther("500");
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                await expect(sourceController.connect(yieldManager).withdrawFromStrategy(withdrawAmount))
+                    .to.emit(sourceController, "FundsWithdrawnFromStrategy")
+                    .withArgs(withdrawAmount);
+
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.equal(withdrawAmount);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(depositAmount.sub(withdrawAmount));
+            });
+
+            it("should revert if strategy is not set", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+
+                await expect(
+                    sourceController.connect(yieldManager).withdrawFromStrategy(ethers.utils.parseEther("100"))
+                ).to.be.revertedWithCustomError(sourceController, "Controller_InvalidStrategy");
+            });
+
+            it("should revert if not called by yield manager", async () => {
+                const yieldManagerRole = await sourceController.YIELD_MANAGER_ROLE();
+                await expect(sourceController.connect(user1Signer).withdrawFromStrategy(ethers.utils.parseEther("100"))).to.be.revertedWith(
+                    `AccessControl: account ${user1Signer.address.toLowerCase()} is missing role ${yieldManagerRole}`
+                );
+            });
+
+            it("should allow withdrawing all principal", async () => {
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                await sourceController.connect(yieldManager).withdrawFromStrategy(depositAmount);
+
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.equal(depositAmount);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(0);
+            });
+        });
+
+        describe("withdrawMaxFromStrategy", () => {
+            const depositAmount = ethers.utils.parseEther("1500");
+
+            beforeEach(async () => {
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+            });
+
+            it("should withdraw all principal from the strategy", async () => {
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                await expect(sourceController.connect(yieldManager).withdrawMaxFromStrategy())
+                    .to.emit(sourceController, "FundsWithdrawnFromStrategy")
+                    .withArgs(depositAmount);
+
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.equal(depositAmount);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(0);
+            });
+
+            it("should revert if strategy is not set", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+
+                await expect(sourceController.connect(yieldManager).withdrawMaxFromStrategy()).to.be.revertedWithCustomError(
+                    sourceController,
+                    "Controller_InvalidStrategy"
+                );
+            });
+
+            it("should revert if not called by yield manager", async () => {
+                const yieldManagerRole = await sourceController.YIELD_MANAGER_ROLE();
+                await expect(sourceController.connect(user1Signer).withdrawMaxFromStrategy()).to.be.revertedWith(
+                    `AccessControl: account ${user1Signer.address.toLowerCase()} is missing role ${yieldManagerRole}`
+                );
+            });
+
+            it("should withdraw correct amount after partial withdrawal", async () => {
+                const partialWithdraw = ethers.utils.parseEther("500");
+                await sourceController.connect(yieldManager).withdrawFromStrategy(partialWithdraw);
+
+                const remainingPrincipal = depositAmount.sub(partialWithdraw);
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                await sourceController.connect(yieldManager).withdrawMaxFromStrategy();
+
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.equal(remainingPrincipal);
+
+                const principal = await strategy.getPrincipal();
+                expect(principal).to.equal(0);
+            });
+        });
+
+        describe("hasYieldStrategy", () => {
+            it("should return true when strategy is set", async () => {
+                expect(await sourceController.hasYieldStrategy()).to.be.true;
+            });
+
+            it("should return false when strategy is not set", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+                expect(await sourceController.hasYieldStrategy()).to.be.false;
+            });
+
+            it("should return true after setting a new strategy", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+                expect(await sourceController.hasYieldStrategy()).to.be.false;
+
+                const AavePoolMock = await ethers.getContractFactory("AavePoolMock");
+                const newAavePoolMock = await AavePoolMock.deploy(ownerSigner.address, sourceToken.address, "Aave Test Token 2", "aTEST2");
+
+                const newStrategy = await upgrades.deployProxy(
+                    YieldStrategy,
+                    [newAavePoolMock.address, sourceToken.address, sourceController.address, ownerSigner.address],
+                    {
+                        initializer: "initialize",
+                    }
+                );
+
+                await sourceController.connect(ownerSigner).setYieldStrategy(newStrategy.address);
+                expect(await sourceController.hasYieldStrategy()).to.be.true;
+            });
+        });
+
+        describe("getTotalValueLocked", () => {
+            it("should return controller balance when no strategy is set", async () => {
+                await sourceController.connect(ownerSigner).setYieldStrategy(ethers.constants.AddressZero);
+
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+                const tvl = await sourceController.getTotalValueLocked();
+
+                expect(tvl).to.equal(controllerBalance);
+            });
+
+            it("should return sum of controller balance and strategy principal", async () => {
+                const depositAmount = ethers.utils.parseEther("2000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+                const strategyPrincipal = await strategy.getPrincipal();
+                const tvl = await sourceController.getTotalValueLocked();
+
+                expect(tvl).to.equal(controllerBalance.add(strategyPrincipal));
+            });
+
+            it("should not include yield in TVL calculation", async () => {
+                const depositAmount = ethers.utils.parseEther("1000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const yieldAmount = ethers.utils.parseEther("150");
+                await aavePoolMock.connect(ownerSigner).simulateYield(strategy.address, yieldAmount);
+
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+                const strategyPrincipal = await strategy.getPrincipal();
+                const tvl = await sourceController.getTotalValueLocked();
+
+                expect(tvl).to.equal(controllerBalance.add(strategyPrincipal));
+            });
+
+            it("should update correctly after deposits and withdrawals", async () => {
+                const initialTvl = await sourceController.getTotalValueLocked();
+
+                const depositAmount = ethers.utils.parseEther("1500");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const tvlAfterDeposit = await sourceController.getTotalValueLocked();
+                expect(tvlAfterDeposit).to.equal(initialTvl);
+
+                const withdrawAmount = ethers.utils.parseEther("500");
+                await sourceController.connect(yieldManager).withdrawFromStrategy(withdrawAmount);
+
+                const tvlAfterWithdraw = await sourceController.getTotalValueLocked();
+                expect(tvlAfterWithdraw).to.equal(initialTvl);
+            });
+
+            it("should handle zero principal in strategy", async () => {
+                const depositAmount = ethers.utils.parseEther("1000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+                await sourceController.connect(yieldManager).withdrawMaxFromStrategy();
+
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+                const tvl = await sourceController.getTotalValueLocked();
+
+                expect(tvl).to.equal(controllerBalance);
+            });
+
+            it("should reflect changes when tokens are added to controller", async () => {
+                const depositAmount = ethers.utils.parseEther("800");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const tvlBefore = await sourceController.getTotalValueLocked();
+
+                const additionalTokens = ethers.utils.parseEther("500");
+                await sourceToken.connect(ownerSigner).transfer(sourceController.address, additionalTokens);
+
+                const tvlAfter = await sourceController.getTotalValueLocked();
+                expect(tvlAfter.sub(tvlBefore)).to.equal(additionalTokens);
+            });
+        });
+
+        describe("receiveMessage with strategy enabled", () => {
+            beforeEach(async () => {
+                relayerFee = ethers.utils.parseEther("0.001");
+                amountToBridge = ethers.utils.parseEther("500");
+            });
+
+            it("should handle receiving bridge transfers and maintaining strategy", async () => {
+                // Deploy tokens to strategy
+                const depositAmount = ethers.utils.parseEther("1000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                const principalBefore = await strategy.getPrincipal();
+
+                // Simulate receiving tokens via bridge
+                await destToken.connect(ownerSigner).approve(destController.address, amountToBridge);
+                await destController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    user1Signer.address,
+                    amountToBridge,
+                    false,
+                    50,
+                    destBridgeAdapter.address,
+                    bridgeOptions,
+                    {
+                        value: relayerFee,
+                    }
+                );
+
+                // Trigger message delivery
+                await connext.callXReceive(1);
+
+                // Strategy principal should remain unchanged
+                const principalAfter = await strategy.getPrincipal();
+                expect(principalAfter).to.equal(principalBefore);
+            });
+
+            it("should revert bridge if both controller and strategy lack liquidity", async () => {
+                const controllerBalance = await sourceToken.balanceOf(sourceController.address);
+                // Transfer all tokens away from controller
+                await sourceController.connect(ownerSigner).rescueTokens(sourceToken.address, ownerSigner.address, controllerBalance);
+
+                // Verify controller has no strategy deposits
+                const strategyPrincipal = await strategy.getPrincipal();
+                expect(strategyPrincipal).to.equal(0);
+
+                // Now try to bridge from destination back to source (which would release tokens)
+                await destToken.connect(ownerSigner).approve(destController.address, amountToBridge);
+                await destController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    user1Signer.address,
+                    amountToBridge,
+                    false,
+                    50,
+                    destBridgeAdapter.address,
+                    bridgeOptions,
+                    {
+                        value: relayerFee,
+                    }
+                );
+
+                // Should revert when trying to release tokens
+                await expect(connext.callXReceive(1)).to.be.reverted;
+            });
+
+            it("should use both controller balance and strategy to fulfill large bridge request", async () => {
+                // Get initial user1 balance
+                const initialUser1Balance = await sourceToken.balanceOf(user1Signer.address);
+
+                // Deploy most of the balance to strategy, leaving some in controller
+                const depositAmount = ethers.utils.parseEther("8000");
+                await sourceController.connect(yieldManager).deployToStrategy(depositAmount);
+
+                // Generate yield in strategy
+                const yieldAmount = ethers.utils.parseEther("300");
+                await aavePoolMock.connect(ownerSigner).simulateYield(strategy.address, yieldAmount);
+
+                // Bridge back large amount from destination - this should require withdrawing from strategy
+                const largeAmount = ethers.utils.parseEther("5000");
+                await destController.setLimits(destBridgeAdapter.address, largeAmount, largeAmount);
+                await sourceController.setLimits(sourceBridgeAdapter.address, largeAmount, largeAmount);
+
+                await destToken.connect(ownerSigner).approve(destController.address, largeAmount);
+                await destController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    user1Signer.address,
+                    largeAmount,
+                    false,
+                    50,
+                    destBridgeAdapter.address,
+                    bridgeOptions,
+                    {
+                        value: relayerFee,
+                    }
+                );
+
+                // Transfer sufficient tokens to pool to cover the withdrawal
+                await sourceToken.connect(ownerSigner).transfer(aavePoolMock.address, ethers.utils.parseEther("10000"));
+
+                const principalBefore = await strategy.getPrincipal();
+                const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+                // Verify controller doesn't have enough to cover largeAmount alone
+                expect(controllerBalanceBefore).to.be.lt(largeAmount);
+                const deficit = largeAmount.sub(controllerBalanceBefore);
+
+                await expect(connext.callXReceive(1)).to.emit(sourceController, "FundsWithdrawnFromStrategy").withArgs(deficit);
+
+                // Verify tokens were released to user
+                const userBalance = await sourceToken.balanceOf(user1Signer.address);
+                expect(userBalance).to.equal(initialUser1Balance.add(largeAmount));
+
+                // Strategy should have been used to cover the deficit
+                const principalAfter = await strategy.getPrincipal();
+                expect(principalAfter).to.equal(principalBefore.sub(deficit));
+
+                // Controller balance should be zero now
+                const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+                expect(controllerBalanceAfter).to.equal(0);
+            });
         });
     });
 });

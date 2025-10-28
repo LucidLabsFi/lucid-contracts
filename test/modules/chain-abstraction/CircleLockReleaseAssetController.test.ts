@@ -78,7 +78,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
             [],
             [],
             [],
-            []
+            [],
+            ethers.constants.AddressZero
         );
 
         // Deploy Destination AssetController contract
@@ -171,7 +172,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    []
+                    [],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -186,7 +188,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    []
+                    [],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -200,7 +203,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [],
                 [],
                 [],
-                []
+                [],
+                ethers.constants.AddressZero
             );
             expect(await controller.multiBridgeAdapters(sourceBridgeAdapter.address)).to.be.equal(true);
         });
@@ -214,7 +218,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [50, 100, 200],
                 [],
                 [],
-                []
+                [],
+                ethers.constants.AddressZero
             );
             expect(await controller.getControllerForChain(50)).to.be.equal(ownerSigner.address);
             expect(await controller.getControllerForChain(100)).to.be.equal(ownerSigner.address);
@@ -230,7 +235,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [50, 100, 200],
                 [],
                 [],
-                []
+                [],
+                ethers.constants.AddressZero
             );
             expect(await controller.MINT_SELECTOR()).to.be.equal("0x40c10f19");
             expect(await controller.BURN_SELECTOR()).to.be.equal("0x42966c68");
@@ -246,7 +252,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [],
                     [],
-                    []
+                    [],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -261,7 +268,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [ownerSigner.address],
                     [],
-                    []
+                    [],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -276,7 +284,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [ownerSigner.address],
                     [],
-                    [200, 100]
+                    [200, 100],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -291,7 +300,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                     [],
                     [ownerSigner.address],
                     [1000],
-                    [200, 100]
+                    [200, 100],
+                    ethers.constants.AddressZero
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
@@ -305,7 +315,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [],
                 [ownerSigner.address],
                 [1000],
-                [200]
+                [200],
+                ethers.constants.AddressZero
             );
             const bridgeParams = await controller.bridges(ownerSigner.address);
             expect(bridgeParams.minterParams.currentLimit).to.be.equal(1000);
@@ -321,7 +332,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [],
                 [ownerSigner.address],
                 [1000],
-                [200]
+                [200],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), user1Signer.address)).to.equal(true);
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), ownerSigner.address)).to.equal(false);
@@ -336,7 +348,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [],
                 [ownerSigner.address],
                 [1000],
-                [200]
+                [200],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), pauser.address)).to.equal(true);
             expect(await controller.hasRole(await destController.PAUSE_ROLE(), ownerSigner.address)).to.equal(false);
@@ -351,7 +364,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
                 [],
                 [ownerSigner.address],
                 [1000],
-                [200]
+                [200],
+                ethers.constants.AddressZero
             );
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), user1Signer.address)).to.equal(true);
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), ownerSigner.address)).to.equal(false);
