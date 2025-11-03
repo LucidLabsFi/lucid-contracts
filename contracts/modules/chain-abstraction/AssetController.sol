@@ -404,7 +404,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param originChain The origin chain ID.
      * @param originSender The address of the origin sender. (controller in origin chain)
      */
-    function receiveMessage(bytes calldata receivedMsg, uint256 originChain, address originSender) public override nonReentrant {
+    function receiveMessage(bytes calldata receivedMsg, uint256 originChain, address originSender) public override nonReentrant whenNotPaused {
         // OriginSender must be a controller on another chain
         if (getControllerForChain(originChain) != originSender) revert Controller_Invalid_Params();
 

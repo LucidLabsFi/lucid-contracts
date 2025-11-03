@@ -63,6 +63,12 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
 
     uint256 public feeRate; // 0..100_000
 
+    /**
+     * @param _spokePool The Across V4 SpokePool address
+     * @param _owner The owner address
+     * @param _treasury The treasury address
+     * @param _feeRate The fee rate
+     */
     constructor(address _spokePool, address _owner, address payable _treasury, uint256 _feeRate) OwnableInit(_owner) {
         if (_spokePool == address(0)) revert Wrapper_SpokePoolZeroAddress();
         if (_treasury == address(0) && _feeRate > 0) revert Wrapper_TreasuryZeroAddress();
@@ -75,14 +81,22 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         emit FeeRateSet(0, _feeRate);
     }
 
-    // ---------------- Admin ----------------
+    // ===== Admin =====
 
+    /**
+     * @notice Set a new treasury address
+     * @param newTreasury The new treasury address
+     */
     function setTreasury(address payable newTreasury) external onlyOwner {
         if (newTreasury == address(0)) revert Wrapper_TreasuryZeroAddress();
         emit TreasurySet(treasury, newTreasury);
         treasury = newTreasury;
     }
 
+    /**
+     * @notice Set a new fee rate
+     * @param newRate The new fee rate
+     */
     function setFeeRate(uint256 newRate) external onlyOwner {
         if (newRate > MAX_FEE_RATE) revert Wrapper_InvalidFeeRate();
         if (newRate > 0 && treasury == address(0)) revert Wrapper_TreasuryZeroAddress();
@@ -98,19 +112,35 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    /**
+     * @notice Recover tokens sent to the contract
+     * @param token The address of the token to recover.
+     * @param to The address to send the recovered tokens to.
+     * @param amount The amount of tokens to recover.
+     */
     function rescueTokens(address token, address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert Wrapper_ZeroAddress();
         IERC20(token).safeTransfer(to, amount);
     }
 
+    /**
+     * @notice Recover ETH sent to the contract
+     * @param to The address to send the recovered ETH to.
+     * @param amount The amount of ETH to recover.
+     */
     function rescueETH(address payable to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert Wrapper_ZeroAddress();
         (bool success, ) = to.call{value: amount}("");
         if (!success) revert Wrapper_TransferFailed();
     }
 
-    // ---------------- Entrypoint ----------------
+    // ===== Entrypoint =====
 
+    /**
+     * @notice Deposit assets to be transferred via Across V4 SpokePool
+     * An ERC20 approval of the amount must be given to this contract prior to calling this function if not using native.
+     * @param d The deposit input parameters
+     */
     function depositV3(DepositInput calldata d) external payable nonReentrant whenNotPaused {
         (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
 
@@ -121,11 +151,17 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         }
     }
 
+    /**
+     * @notice Quote the fee and net amount for a given gross amount
+     * @param amount The gross amount
+     * @return fee The fee amount
+     * @return net The net amount after fee
+     */
     function quote(uint256 amount) external view returns (uint256 fee, uint256 net) {
         return _computeFeeAndNet(amount);
     }
 
-    // ---------------- Internal helpers ----------------
+    // ===== Internal helpers =====
 
     function _depositNativeWithFee(DepositInput calldata d, uint256 fee, uint256 net) internal {
         if (msg.value != d.inputAmount) revert Wrapper_MsgValueInputAmountMismatch();

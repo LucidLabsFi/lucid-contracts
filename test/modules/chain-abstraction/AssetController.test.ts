@@ -1346,6 +1346,10 @@ describe("AssetController Tests", () => {
 
             await expect(connext2.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_TransferNotExecutable");
         });
+        it("should revert if the contract is paused", async () => {
+            await destController.pause();
+            await expect(connext.callXReceive(1)).to.be.revertedWith("Pausable: paused");
+        });
         it("should use the minting limit of the new bridge", async () => {
             const limitBefore = await destController.mintingCurrentLimitOf(destBridgeAdapter.address);
             await connext.callXReceive(1);

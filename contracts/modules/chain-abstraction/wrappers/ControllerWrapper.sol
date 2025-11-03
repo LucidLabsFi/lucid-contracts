@@ -81,6 +81,14 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
     // Per-destination premium added on top of base (then clamped)
     mapping(uint256 => uint256) public destChainPremiumRate; // per-destination premium rate
 
+    /**
+     * @param access The addresses for access control: [admin, controller manager]
+     * @param _treasury The treasury address for fee collection
+     * @param _feeRate The global fee rate
+     * @param initialControllers The initial whitelisted controllers
+     * @param premiumChainIds The destination chain IDs for premium rates
+     * @param premiumRate The premium rates corresponding to the destination chain IDs
+     */
     constructor(
         address[2] memory access, // admin, controller manager
         address _treasury,
@@ -126,6 +134,14 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
     }
 
     // ===== External =====
+    /**
+     * @notice Transfer assets to a recipient on a destination chain via the specified controller and a single adapter.
+     * An ERC20 approval of the amount must be given to this contract prior to calling this function.
+     * @param input The deposit input parameters.
+     * @param adapter The bridge adapter to use.
+     * @param bridgeOptions Additional options for the bridge.
+     * @param data Arbitrary data for logging purposes.
+     */
     function transferTo(
         DepositInput calldata input,
         address adapter,
@@ -145,6 +161,14 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit TransferSent(msg.sender, input.controller, false, false, input.amount, net, data);
     }
 
+    /**
+     * @notice Transfer assets to a recipient on a destination chain via the specified controller and a single adapter, using permit for approval.
+     * @param input The deposit input parameters.
+     * @param permit The permit data for ERC20 approval.
+     * @param adapter The bridge adapter to use.
+     * @param bridgeOptions Additional options for the bridge.
+     * @param data Arbitrary data for logging purposes.
+     */
     function transferToWPermit(
         DepositInput calldata input,
         PermitData calldata permit,
@@ -165,6 +189,15 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit TransferSent(msg.sender, input.controller, false, false, input.amount, net, data);
     }
 
+    /**
+     * @notice Transfer assets to a recipient on a destination chain via the specified controller and multiple adapters.
+     * An ERC20 approval of the amount must be given to this contract prior to calling this function.
+     * @param input The deposit input parameters.
+     * @param adapters The bridge adapters to use.
+     * @param fees The fees for each adapter.
+     * @param bridgeOptions Additional options for the bridges.
+     * @param data Arbitrary data for logging purposes.
+     */
     function transferTo(
         DepositInput calldata input,
         address[] memory adapters,
@@ -186,6 +219,15 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit TransferSent(msg.sender, input.controller, false, true, input.amount, net, data);
     }
 
+    /**
+     * @notice Transfer assets to a recipient on a destination chain via the specified controller and multiple adapters, using permit for approval.
+     * @param input The deposit input parameters.
+     * @param permit The permit data for ERC20 approval.
+     * @param adapters The bridge adapters to use.
+     * @param fees The fees for each adapter.
+     * @param bridgeOptions Additional options for the bridges.
+     * @param data Arbitrary data for logging purposes.
+     */
     function transferToWPermit(
         DepositInput calldata input,
         PermitData calldata permit,
@@ -208,6 +250,14 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit TransferSent(msg.sender, input.controller, false, true, input.amount, net, data);
     }
 
+    /**
+     * @notice Resend a single-bridge transfer
+     * @param controller The controller to use.
+     * @param transferId The ID of the transfer to resend.
+     * @param adapter The bridge adapter to use.
+     * @param bridgeOptions Additional options for the bridge.
+     * @param data Arbitrary data for logging purposes.
+     */
     function resendTransfer(
         address controller,
         bytes32 transferId,
@@ -220,6 +270,15 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit TransferSent(msg.sender, controller, true, false, 0, 0, data);
     }
 
+    /**
+     * @notice Resend a multi-bridge transfer
+     * @param controller The controller to use.
+     * @param transferId The ID of the transfer to resend.
+     * @param adapters The bridge adapters to use.
+     * @param fees The fees for each adapter.
+     * @param bridgeOptions Additional options for the bridges.
+     * @param data Arbitrary data for logging purposes.
+     */
     function resendTransfer(
         address controller,
         bytes32 transferId,
@@ -234,6 +293,11 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
     }
 
     // ===== Admin =====
+    /**
+     * @notice Set the whitelisted status for multiple controllers.
+     * @param controller The addresses of the controllers.
+     * @param whitelisted The whitelisted status for each controller.
+     */
     function setControllers(address[] calldata controller, bool[] calldata whitelisted) external adminOrManager {
         if (controller.length != whitelisted.length) revert Wrapper_LengthMismatch();
         for (uint256 i = 0; i < controller.length; i++) {
@@ -242,6 +306,10 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         }
     }
 
+    /**
+     * @notice Set the fee rate for the wrapper.
+     * @param newFeeRate The new fee rate to be set.
+     */
     function setFeeRate(uint256 newFeeRate) external adminOrManager {
         if (newFeeRate > MAX_FEE_RATE) revert Wrapper_InvalidFeeRate();
         if (newFeeRate > 0 && treasury == address(0)) revert Wrapper_TreasuryZeroAddress();
@@ -268,6 +336,88 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         }
     }
 
+    /**
+     * @notice Set premium fee rates for specific destination chains. Each rate corresponds to the chain ID at the same index.
+     * @param chainIds The IDs of the destination chains.
+     * @param rates The premium fee rates for each chain.
+     */
+    function setDestChainPremiumRate(uint256[] calldata chainIds, uint256[] calldata rates) external adminOrManager {
+        if (chainIds.length != rates.length) revert Wrapper_LengthMismatch();
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            if (rates[i] > MAX_FEE_RATE) revert Wrapper_InvalidFeeRate();
+            destChainPremiumRate[chainIds[i]] = rates[i];
+            emit DestChainPremiumSet(chainIds[i], rates[i]);
+        }
+    }
+
+    /**
+     * @notice Set the treasury address.
+     * @param newTreasury The new treasury address.
+     */
+    function setTreasury(address newTreasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newTreasury == address(0)) revert Wrapper_TreasuryZeroAddress();
+        emit TreasurySet(treasury, newTreasury);
+        treasury = newTreasury;
+    }
+
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @notice Recover tokens sent to the contract
+     * @param token The address of the token to recover.
+     * @param to The address to send the recovered tokens to.
+     * @param amount The amount of tokens to recover.
+     */
+    function rescueTokens(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (to == address(0)) revert Wrapper_ZeroAddress();
+        IERC20(token).safeTransfer(to, amount);
+    }
+
+    /**
+     * @notice Recover ETH sent to the contract
+     * @param to The address to send the recovered ETH to.
+     * @param amount The amount of ETH to recover.
+     */
+    function rescueETH(address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (to == address(0)) revert Wrapper_ZeroAddress();
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) revert Wrapper_TransferFailed();
+    }
+
+    // ===== Views =====
+    function getControllerFeeTiers(
+        address controller,
+        uint256 destChainId
+    ) external view returns (uint256[] memory thresholds, uint256[] memory bips) {
+        FeeTierConfig memory config = _controllerFeeTiers[controller][destChainId];
+        thresholds = new uint256[](config.count);
+        bips = new uint256[](config.count);
+        for (uint8 i = 0; i < config.count; i++) {
+            thresholds[i] = config.tiers[i].threshold;
+            bips[i] = config.tiers[i].rate;
+        }
+        return (thresholds, bips);
+    }
+
+    /**
+     * @notice Quote the fee and net given amount/controller/destChain.
+     * @param controller The controller address
+     * @param destChainId The destination chain ID
+     * @param amount The gross amount
+     * @return fee The total fee to be collected
+     * @return net The net amount after fee
+     */
+    function quote(address controller, uint256 destChainId, uint256 amount) external view returns (uint256 fee, uint256 net) {
+        (fee, net) = _quoteFee(controller, destChainId, amount);
+    }
+
+    // ===== Internal helpers =====
     function _setControllerFeeTiers(address controller_, uint256 destChainId, uint256[] memory thresholds, uint256[] memory bips) internal {
         FeeTierConfig storage config = _controllerFeeTiers[controller_][destChainId];
         // Clear existing tiers
@@ -292,75 +442,6 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
         emit ControllerFeeTiersSet(controller_, destChainId, thresholds, bips);
     }
 
-    /**
-     * @notice Set premium fee rates for specific destination chains. Each rate corresponds to the chain ID at the same index.
-     * @param chainIds The IDs of the destination chains.
-     * @param rates The premium fee rates for each chain.
-     */
-    function setDestChainPremiumRate(uint256[] calldata chainIds, uint256[] calldata rates) external adminOrManager {
-        if (chainIds.length != rates.length) revert Wrapper_LengthMismatch();
-        for (uint256 i = 0; i < chainIds.length; i++) {
-            if (rates[i] > MAX_FEE_RATE) revert Wrapper_InvalidFeeRate();
-            destChainPremiumRate[chainIds[i]] = rates[i];
-            emit DestChainPremiumSet(chainIds[i], rates[i]);
-        }
-    }
-
-    function setTreasury(address newTreasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newTreasury == address(0)) revert Wrapper_TreasuryZeroAddress();
-        emit TreasurySet(treasury, newTreasury);
-        treasury = newTreasury;
-    }
-
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _pause();
-    }
-
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _unpause();
-    }
-
-    function rescueTokens(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (to == address(0)) revert Wrapper_ZeroAddress();
-        IERC20(token).safeTransfer(to, amount);
-    }
-
-    function rescueETH(address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (to == address(0)) revert Wrapper_ZeroAddress();
-        (bool success, ) = to.call{value: amount}("");
-        if (!success) revert Wrapper_TransferFailed();
-    }
-
-    // ===== Views =====
-    function getControllerFeeTiers(
-        address controller,
-        uint256 destChainId
-    ) external view returns (uint256[] memory thresholds, uint256[] memory bips) {
-        FeeTierConfig memory config = _controllerFeeTiers[controller][destChainId];
-        thresholds = new uint256[](config.count);
-        bips = new uint256[](config.count);
-        for (uint8 i = 0; i < config.count; i++) {
-            thresholds[i] = config.tiers[i].threshold;
-            bips[i] = config.tiers[i].rate;
-        }
-        return (thresholds, bips);
-    }
-
-    /// @notice Quote the fee and net given amount/controller/destChain.
-    function quote(address controller, uint256 destChainId, uint256 amount) external view returns (uint256 fee, uint256 net) {
-        (fee, net) = _quoteFee(controller, destChainId, amount);
-    }
-
-    // ===== Internal helpers =====
-    /**
-     * @notice Internal function to calculate the fee and net amount for a given controller, destChainId, and amount.
-     * Implements tiered fee logic similar to LTokenUpgradeable, with fallback to global feeRate and addition of destChainPremiumRates.
-     * @param controller The controller address
-     * @param destChainId The destination chain ID
-     * @param amount The gross amount
-     * @return fee The total fee to be collected
-     * @return net The net amount after fee
-     */
     function _quoteFee(address controller, uint256 destChainId, uint256 amount) internal view returns (uint256 fee, uint256 net) {
         FeeTierConfig memory config = _controllerFeeTiers[controller][destChainId];
         uint256 baseFee = 0;

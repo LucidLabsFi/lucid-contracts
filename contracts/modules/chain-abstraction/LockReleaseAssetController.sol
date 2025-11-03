@@ -44,7 +44,10 @@ contract LockReleaseAssetController is AssetController {
     /// @notice Error thrown when a zero address is encountered
     error Controller_ZeroAddress();
 
+    /// @notice Error thrown when an invalid yield strategy contract is set
     error Controller_InvalidStrategy();
+
+    /// @notice Error thrown when there is insufficient liquidity to fulfill a mint message
     error Controller_InsufficientLiquidity();
 
     /// @notice The active yield strategy (address(0) means no strategy)

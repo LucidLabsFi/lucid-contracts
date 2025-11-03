@@ -596,6 +596,22 @@ describe("LockReleaseAssetController Tests", () => {
             );
             await expect(connext.callXReceive(2)).to.emit(sourceController, "LiquidityRemoved").withArgs(amountToBridge);
         });
+        it("should revert if the contract is paused", async () => {
+            await destToken.connect(ownerSigner).approve(destController.address, amountToBridge);
+            await destController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                user1Signer.address,
+                amountToBridge,
+                true,
+                50,
+                destBridgeAdapter.address,
+                bridgeOptions,
+                {
+                    value: relayerFee,
+                }
+            );
+            await sourceController.pause();
+            await expect(connext.callXReceive(2)).to.be.revertedWith("Pausable: paused");
+        });
         it("should revert if the Controller doesn't have enough tokens", async () => {
             // Bridge tokens from the destination (burn) to the source (release)
             // Approval needs to be given because controller will lock the tokens
