@@ -211,7 +211,7 @@ contract BondAggregator is IBondAggregator, Auth {
 
         uint256 highestOut;
         uint256 id = type(uint256).max; // set to max so an empty set doesn't return 0, the first index
-        uint48[3] memory vestTerms;
+        uint48[4] memory vestTerms;
         uint256 maxPayout;
         IBondAuctioneer auctioneer;
         for (uint256 i; i < len; ++i) {

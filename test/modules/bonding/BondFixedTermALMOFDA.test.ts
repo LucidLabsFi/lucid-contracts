@@ -105,7 +105,7 @@ describe("BondFixedTerm ALM OFDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         stablecoin.address, //payout token for the bond
@@ -120,6 +120,7 @@ describe("BondFixedTerm ALM OFDA Tests", () => {
                         vestingLength,
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                     ],
                 ]

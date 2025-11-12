@@ -201,7 +201,7 @@ describe("BondFixedExpiryFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -214,6 +214,7 @@ describe("BondFixedExpiryFPA Tests", () => {
                         vestingTimestamp,
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                         "0",
                     ],
@@ -271,7 +272,7 @@ describe("BondFixedExpiryFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -285,6 +286,7 @@ describe("BondFixedExpiryFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]
@@ -299,7 +301,7 @@ describe("BondFixedExpiryFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -313,6 +315,7 @@ describe("BondFixedExpiryFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]
@@ -358,7 +361,7 @@ describe("BondFixedExpiryFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -371,6 +374,7 @@ describe("BondFixedExpiryFPA Tests", () => {
                         "0",
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                         "0",
                     ],
@@ -385,7 +389,7 @@ describe("BondFixedExpiryFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -399,6 +403,7 @@ describe("BondFixedExpiryFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]

@@ -35,9 +35,14 @@ contract BondFixedTermSDA is BondBaseSDA {
         MarketParams memory params = abi.decode(params_, (MarketParams));
 
         // Check that the vesting parameter is valid for a fixed-term market
-        if (params.vesting != 0 && (params.vesting < 1 days || params.vesting > MAX_FIXED_TERM)) revert Auctioneer_InvalidParams();
-        if (params.vesting == 0 && (params.linearDuration > MAX_FIXED_TERM || params.linearDuration < MIN_LINEAR_DURATION))
+        // If linear vesting is not selected (vesting == 0), the cliff duration must be 0.
+        if (params.vesting != 0 && (params.vesting < 1 days || params.vesting > MAX_FIXED_TERM || params.cliffDuration > 0))
             revert Auctioneer_InvalidParams();
+        // If linear vesting is selected (vesting == 0), cliff duration must be lower than vesting duration. (if cliff duration == linearDuration, choose non linear vesting)
+        if (
+            params.vesting == 0 &&
+            (params.linearDuration > MAX_FIXED_TERM || params.linearDuration < MIN_LINEAR_DURATION || params.cliffDuration >= params.linearDuration)
+        ) revert Auctioneer_InvalidParams();
         // Create market and return market ID
         return _createMarket(params);
     }

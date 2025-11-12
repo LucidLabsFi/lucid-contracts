@@ -263,7 +263,8 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
             start: start,
             conclusion: start + uint48(params_.duration),
             vesting: params_.vesting,
-            linearDuration: params_.linearDuration
+            linearDuration: params_.linearDuration,
+            cliffDuration: params_.cliffDuration
         });
 
         emit MarketCreated(marketId, address(params_.payoutToken), address(params_.quoteToken), params_.vesting, params_.formattedInitialPrice);
@@ -309,8 +310,13 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
 
     /// @inheritdoc IBondAuctioneer
     function pullOwnership(uint256 id_) external override {
-        if (_msgSender() != newOwners[id_]) revert Auctioneer_NotAuthorized();
-        markets[id_].owner = newOwners[id_];
+        address newOwner = newOwners[id_];
+        if (_msgSender() != newOwner) revert Auctioneer_NotAuthorized();
+
+        BondMarket storage market = markets[id_];
+        // Only proceed if there's no callback or the new owner is callback authorized
+        if (market.callbackAddr != address(0) && !callbackAuthorized[newOwner]) revert Auctioneer_NotAuthorized();
+        market.owner = newOwner;
     }
 
     /// @inheritdoc IBondAuctioneer
@@ -608,7 +614,7 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
     )
         external
         view
-        returns (address owner, address callbackAddr, ERC20 payoutToken, ERC20 quoteToken, uint48[3] memory vestTerms, uint256 maxPayout_)
+        returns (address owner, address callbackAddr, ERC20 payoutToken, ERC20 quoteToken, uint48[4] memory vestTerms, uint256 maxPayout_)
     {
         BondMarket memory market = markets[id_];
         return (
@@ -616,7 +622,7 @@ abstract contract BondBaseSDA is IBondSDA, Context, Auth {
             market.callbackAddr,
             market.payoutToken,
             market.quoteToken,
-            [terms[id_].vesting, terms[id_].start, terms[id_].linearDuration],
+            [terms[id_].vesting, terms[id_].start, terms[id_].linearDuration, terms[id_].cliffDuration],
             maxPayout(id_)
         );
     }

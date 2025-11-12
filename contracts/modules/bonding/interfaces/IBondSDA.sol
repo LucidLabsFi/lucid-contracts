@@ -29,6 +29,7 @@ interface IBondSDA is IBondAuctioneer {
         uint48 conclusion; // timestamp when market no longer offered
         uint48 vesting; // length of time from deposit to expiry if fixed-term, vesting timestamp if fixed-expiry
         uint48 linearDuration; // duration of linear vesting
+        uint48 cliffDuration; // duration of cliff vesting
     }
 
     /// @notice Data needed for tuning bond market
@@ -91,7 +92,8 @@ interface IBondSDA is IBondAuctioneer {
     /// @dev                    10. Market Duration (seconds) - Duration of the market in seconds.
     /// @dev                    11. Deposit interval (seconds)
     /// @dev                    12. Is fixed term ? Linear vesting duration (seconds) : Linear expiry (timestamp), 0 for non-linear vesting.
-    /// @dev                    13. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
+    /// @dev                    13. Cliff Duration (seconds) - Duration of the cliff vesting. 0 for no cliff. 0 if non-linear vesting or fixed expiry markets.
+    /// @dev                    14. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
     /// @dev                        Should be calculated as: (payoutDecimals - quoteDecimals) - ((payoutPriceDecimals - quotePriceDecimals) / 2)
     /// @dev                        Providing a scaling factor adjustment that doesn't follow this formula could lead to under or overflow errors in the market.
     /// @return                 ID of new bond market
@@ -109,6 +111,7 @@ interface IBondSDA is IBondAuctioneer {
         uint32 duration;
         uint32 depositInterval;
         uint48 linearDuration;
+        uint48 cliffDuration;
         int8 scaleAdjustment;
     }
 

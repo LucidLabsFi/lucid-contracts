@@ -49,6 +49,8 @@ contract BondFixedExpirySDA is BondBaseSDA {
         if (params.vesting == 0 && (start >= params.linearDuration)) revert Auctioneer_InvalidParams();
         if (params.vesting == 0 && ((params.linearDuration - start) < MIN_LINEAR_DURATION)) revert Auctioneer_InvalidParams();
         if (params.vesting == 0 && (params.linearDuration <= conclusion)) revert Auctioneer_InvalidParams();
+        // Cliff duration is not supported in fixed-expiry markets
+        if (params.cliffDuration != 0) revert Auctioneer_InvalidParams();
 
         // Create market with provided params
         uint256 marketId = _createMarket(params);

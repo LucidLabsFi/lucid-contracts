@@ -60,13 +60,13 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
     /// @param recipient_   Address to receive payout
     /// @param payout_      Amount of payoutToken to be paid
     /// @param underlying_   Token to be paid out
-    /// @param terms_       Terms of the bond market(vesting, start)
+    /// @param terms_       Terms of the bond market(vesting, start, linearDuration, cliffDuration)
     /// @return expiry      Timestamp when the payout will vest
     function _handlePayout(
         address recipient_,
         uint256 payout_,
         ERC20 underlying_,
-        uint48[3] memory terms_ // [vesting, start, linearDuration]
+        uint48[4] memory terms_ // [vesting, start, linearDuration, cliffDuration]
     ) internal override returns (uint48 expiry) {
         // If there is no vesting time, the deposit is treated as an instant swap.
         // otherwise, deposit info is stored and payout is available at a future timestamp.
@@ -90,7 +90,7 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
             // In Fixed Expiry, linearDuration is the end timestamp, so we calculate the vesting duration as end - start.
             uint256 linearDuration = uint256(terms_[2] - block.timestamp); // linear duration timestamp - now
             expiry = terms_[2];
-            bondVesting.createVestingSchedule(recipient_, address(underlying_), uint256(block.timestamp), 0, linearDuration, 1, payout_);
+            bondVesting.createVestingSchedule(recipient_, address(underlying_), uint256(block.timestamp), terms_[3], linearDuration, 1, payout_);
         }
     }
 
@@ -192,7 +192,7 @@ contract BondFixedExpiryTeller is BondBaseTeller, IBondFixedExpiryTeller {
         if (address(_aggregator.getTeller(id_)) != address(this)) revert Teller_InvalidParams();
 
         // Get the underlying and expiry for the market
-        (, , ERC20 underlying, , uint48[3] memory vestTerms, ) = _aggregator.getAuctioneer(id_).getMarketInfoForPurchase(id_);
+        (, , ERC20 underlying, , uint48[4] memory vestTerms, ) = _aggregator.getAuctioneer(id_).getMarketInfoForPurchase(id_);
 
         return bondTokens[underlying][vestTerms[0]];
     }

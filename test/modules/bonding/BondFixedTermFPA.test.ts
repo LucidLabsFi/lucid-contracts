@@ -203,7 +203,7 @@ describe("BondFixedTermFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -216,6 +216,7 @@ describe("BondFixedTermFPA Tests", () => {
                         vestingLength,
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                         "0",
                     ],
@@ -256,6 +257,34 @@ describe("BondFixedTermFPA Tests", () => {
 
             expect(await payoutToken.balanceOf(user1Signer.address)).to.be.equal(balance); //Payout tokens should be transfered to the user 1:1
         });
+        it("should revert if a cliff duration is provided", async () => {
+            //
+            // Create market on Auctioner
+            //
+            // Encode function params
+            const encodedParams = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
+                [
+                    [
+                        payoutToken.address,
+                        quoteToken.address,
+                        ethers.constants.AddressZero,
+                        false,
+                        ethers.utils.parseEther("100000"),
+                        ethers.utils.parseEther("5000000000000000000"),
+                        "3600",
+                        vestingLength,
+                        "0",
+                        bondDuration,
+                        "0",
+                        "100", // cliff duration
+                        "0",
+                    ],
+                ]
+            ); // formated price in the simplest scenario (1:1) is 1 * 10**36, with 0 scale adjustment.
+            // Call create market
+            await expect(auctioner.createMarket(encodedParams)).to.be.revertedWithCustomError(auctioner, "Auctioneer_InvalidParams");
+        });
     });
     describe("Fixed-term linear vesting bonds", () => {
         beforeEach(async () => {
@@ -278,7 +307,7 @@ describe("BondFixedTermFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -292,6 +321,65 @@ describe("BondFixedTermFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingLength,
+                        "0",
+                        "0",
+                    ],
+                ]
+            );
+            // Call create market
+
+            await expect(auctioner.createMarket(encodedParams)).to.be.revertedWithCustomError(auctioner, "Auctioneer_InvalidParams");
+        });
+        it("should revert if the cliff is equal to the linear duration", async () => {
+            //
+            // Create market on Auctioner
+            //
+            // Encode function params
+            const encodedParams = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
+                [
+                    [
+                        payoutToken.address,
+                        quoteToken.address,
+                        ethers.constants.AddressZero,
+                        false,
+                        ethers.utils.parseEther("100000"),
+                        ethers.utils.parseEther("5000000000000000000"),
+                        "3600",
+                        "0",
+                        "0",
+                        bondDuration,
+                        vestingLength,
+                        vestingLength,
+                        "0",
+                    ],
+                ]
+            );
+            // Call create market
+
+            await expect(auctioner.createMarket(encodedParams)).to.be.revertedWithCustomError(auctioner, "Auctioneer_InvalidParams");
+        });
+        it("should revert if the cliff is greater than the linear duration", async () => {
+            //
+            // Create market on Auctioner
+            //
+            // Encode function params
+            const encodedParams = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
+                [
+                    [
+                        payoutToken.address,
+                        quoteToken.address,
+                        ethers.constants.AddressZero,
+                        false,
+                        ethers.utils.parseEther("100000"),
+                        ethers.utils.parseEther("5000000000000000000"),
+                        "3600",
+                        "0",
+                        "0",
+                        bondDuration,
+                        vestingLength,
+                        vestingLength + 1,
                         "0",
                     ],
                 ]
@@ -306,7 +394,7 @@ describe("BondFixedTermFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -320,6 +408,7 @@ describe("BondFixedTermFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingLength,
+                        "0",
                         "0",
                     ],
                 ]
@@ -359,14 +448,14 @@ describe("BondFixedTermFPA Tests", () => {
             // vestingSchedule = await vesting.getVestingSchedule(payoutToken.address, vestingScheduleId);
             // expect(vestingSchedule.released).to.be.equal(vestingSchedule.amountTotal);
         });
-        it("should check linear duration is valid for a fixed-term linear vesting market", async () => {
-            vestingLength = 60 * 60 * 24 * 365 * 51; // 51 years
+        it("should create a vesting schedule with a cliff", async () => {
+            const cliffDuration = vestingLength / 2; // seconds
             //
             // Create market on Auctioner
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -380,6 +469,68 @@ describe("BondFixedTermFPA Tests", () => {
                         "0",
                         bondDuration,
                         vestingLength,
+                        cliffDuration,
+                        "0",
+                    ],
+                ]
+            ); // formated price in the simplest scenario (1:1) is 1 * 10**36, with 0 scale adjustment.
+            // Call create market
+
+            createTx = await auctioner.createMarket(encodedParams);
+            // Approve payout tokens from owner to teller contract to be able to transfer on new purchases
+            await payoutToken.connect(ownerSigner).approve(teller.address, ethers.utils.parseEther("100000"));
+
+            await quoteToken.connect(user1Signer).approve(teller.address, ethers.utils.parseEther("520"));
+
+            const createTimestamp = (await ethers.provider.getBlock(createTx.blockNumber)).timestamp;
+            const linearVestingDuration = vestingLength;
+            // Purchase bond
+            const purchaseTx = await teller
+                .connect(user1Signer)
+                .purchase(user1Signer.address, ethers.constants.AddressZero, 0, ethers.utils.parseEther("520"), ethers.utils.parseEther("90"));
+            const purchaseTimestamp = (await ethers.provider.getBlock(purchaseTx.blockNumber)).timestamp;
+            const receipt = await purchaseTx.wait();
+            const bondedEvent = receipt.events?.find((x: any) => x.event === "Bonded");
+
+            const vestingScheduleId = await vesting.getVestingIdAtIndex(0);
+            let vestingSchedule = await vesting.getVestingSchedule(payoutToken.address, vestingScheduleId);
+
+            expect(vestingSchedule.beneficiary).to.be.equal(user1Signer.address);
+            expect(vestingSchedule.token).to.be.equal(payoutToken.address);
+            expect(vestingSchedule.cliff).to.be.equal(purchaseTimestamp + cliffDuration);
+            expect(vestingSchedule.start).to.be.equal(purchaseTimestamp);
+            expect(vestingSchedule.duration).to.be.equal(linearVestingDuration);
+            expect(vestingSchedule.slicePeriodSeconds).to.be.equal(1);
+            expect(vestingSchedule.amountTotal).to.be.equal(bondedEvent.args.payout);
+
+            // Jump in time in hardhat & release
+            // await helpers.time.increase(linearVestingDuration);
+            // await vesting.connect(user1Signer).release(payoutToken.address, vestingScheduleId);
+            // vestingSchedule = await vesting.getVestingSchedule(payoutToken.address, vestingScheduleId);
+            // expect(vestingSchedule.released).to.be.equal(vestingSchedule.amountTotal);
+        });
+        it("should check linear duration is valid for a fixed-term linear vesting market", async () => {
+            vestingLength = 60 * 60 * 24 * 365 * 51; // 51 years
+            //
+            // Create market on Auctioner
+            //
+            // Encode function params
+            const encodedParams = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
+                [
+                    [
+                        payoutToken.address,
+                        quoteToken.address,
+                        ethers.constants.AddressZero,
+                        false,
+                        ethers.utils.parseEther("100000"),
+                        ethers.utils.parseEther("5000000000000000000"),
+                        "3600",
+                        "0",
+                        "0",
+                        bondDuration,
+                        vestingLength,
+                        "0",
                         "0",
                     ],
                 ]
@@ -393,7 +544,7 @@ describe("BondFixedTermFPA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -408,6 +559,7 @@ describe("BondFixedTermFPA Tests", () => {
                         bondDuration,
                         vestingLength,
                         "0",
+                        "0",
                     ],
                 ]
             ); // formated price in the simplest scenario (1:1) is 1 * 10**36, with 0 scale adjustment.
@@ -415,6 +567,37 @@ describe("BondFixedTermFPA Tests", () => {
             createTx = await auctioner.createMarket(encodedParams);
             const bondTerms = await auctioner.terms(0);
             expect(bondTerms.linearDuration).to.be.equal(vestingLength);
+        });
+        it("should store cliffDuration in bond terms", async () => {
+            const cliffDuration = 350;
+            //
+            // Create market on Auctioner
+            //
+            // Encode function params
+            const encodedParams = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(address, address, address, bool, uint256, uint256, uint48, uint48, uint48, uint48, uint48, uint48, int8)"],
+                [
+                    [
+                        payoutToken.address,
+                        quoteToken.address,
+                        ethers.constants.AddressZero,
+                        false,
+                        ethers.utils.parseEther("100000"),
+                        ethers.utils.parseEther("5000000000000000000"),
+                        "3600",
+                        "0",
+                        "0",
+                        bondDuration,
+                        vestingLength,
+                        cliffDuration, // cliff duration
+                        "0",
+                    ],
+                ]
+            ); // formated price in the simplest scenario (1:1) is 1 * 10**36, with 0 scale adjustment.
+            // Call create market
+            createTx = await auctioner.createMarket(encodedParams);
+            const bondTerms = await auctioner.terms(0);
+            expect(bondTerms.cliffDuration).to.be.equal(cliffDuration);
         });
     });
 });

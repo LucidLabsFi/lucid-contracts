@@ -206,7 +206,7 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
     ) external virtual nonReentrant returns (uint256, uint48) {
         ERC20 payoutToken;
         ERC20 quoteToken;
-        uint48[3] memory vestTerms; //vesting, start, duration
+        uint48[4] memory vestTerms; //vesting, start, duration, cliffDuration
 
         // Calculate fees for purchase
         // 1. Calculate referrer fee (if there is a referrer)
@@ -296,7 +296,7 @@ abstract contract BondBaseTeller is IBondTeller, Context, Auth, ReentrancyGuard 
         address recipient_,
         uint256 payout_,
         ERC20 underlying_,
-        uint48[3] memory terms_ // [vesting, start, linearDuration]
+        uint48[4] memory terms_ // [vesting, start, linearDuration, cliffDuration]
     ) internal virtual returns (uint48 expiry);
 
     /// @notice             Derive name and symbol of token for market

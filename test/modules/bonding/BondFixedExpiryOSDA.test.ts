@@ -239,7 +239,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -255,6 +255,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
                         vestingTimestamp,
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                     ],
                 ]
@@ -352,7 +353,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -369,6 +370,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                     ],
                 ]
             );
@@ -382,7 +384,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -399,6 +401,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                     ],
                 ]
             );
@@ -438,7 +441,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -455,6 +458,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
                         "0",
                         bondDuration,
                         "0",
+                        "0",
                     ],
                 ]
             );
@@ -467,7 +471,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -484,6 +488,7 @@ describe("BondFixedExpiryOSDA Tests", () => {
                         "0",
                         bondDuration,
                         vestingTimestamp,
+                        "0",
                     ],
                 ]
             );

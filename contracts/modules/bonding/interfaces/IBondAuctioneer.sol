@@ -82,7 +82,7 @@ interface IBondAuctioneer {
     /// @return callbackAddr    Address of the callback contract to get tokens for payouts
     /// @return payoutToken     Payout Token (token paid out) for the Market
     /// @return quoteToken      Quote Token (token received) for the Market
-    /// @return vestTerms       Array of vesting terms //vesting, start, linearDuration
+    /// @return vestTerms       Array of vesting terms //vesting, start, linearDuration, cliffDuration
     /// @return maxPayout       Maximum amount of payout tokens you can purchase in one transaction
     function getMarketInfoForPurchase(
         uint256 id_
@@ -94,7 +94,7 @@ interface IBondAuctioneer {
             address callbackAddr,
             ERC20 payoutToken,
             ERC20 quoteToken,
-            uint48[3] memory vestTerms, //vesting, start, linearDuration
+            uint48[4] memory vestTerms, //vesting, start, linearDuration, cliffDuration
             uint256 maxPayout
         );
 

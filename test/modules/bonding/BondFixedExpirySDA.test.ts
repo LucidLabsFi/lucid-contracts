@@ -205,7 +205,7 @@ describe("BondFixedExpirySDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -220,6 +220,7 @@ describe("BondFixedExpirySDA Tests", () => {
                         "0",
                         bondDuration,
                         "3600",
+                        "0",
                         "0",
                         "0",
                     ],
@@ -277,7 +278,7 @@ describe("BondFixedExpirySDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -293,6 +294,7 @@ describe("BondFixedExpirySDA Tests", () => {
                         bondDuration,
                         "3600",
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]
@@ -307,7 +309,7 @@ describe("BondFixedExpirySDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -323,6 +325,7 @@ describe("BondFixedExpirySDA Tests", () => {
                         bondDuration,
                         "3600",
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]
@@ -368,7 +371,7 @@ describe("BondFixedExpirySDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -385,6 +388,7 @@ describe("BondFixedExpirySDA Tests", () => {
                         "3600",
                         "0",
                         "0",
+                        "0",
                     ],
                 ]
             ); // formated price in the simplest scenario (1:1) is 1 * 10**36, with 0 scale adjustment. Debt bufer is 50%
@@ -397,7 +401,7 @@ describe("BondFixedExpirySDA Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, int8)"],
+                ["tuple(address, address, address, bool, uint256, uint256, uint256, uint32, uint48, uint48, uint32, uint32, uint48, uint48, int8)"],
                 [
                     [
                         payoutToken.address,
@@ -413,6 +417,7 @@ describe("BondFixedExpirySDA Tests", () => {
                         bondDuration,
                         "3600",
                         vestingTimestamp,
+                        "0",
                         "0",
                     ],
                 ]

@@ -94,7 +94,7 @@ describe("BondUniV3OracleL2 Tests", () => {
             //
             // Encode function params
             const encodedParams = ethers.utils.defaultAbiCoder.encode(
-                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48)"],
+                ["tuple(address, address, address, address, uint48, uint48, uint48, bool, uint256, uint48, uint48, uint48, uint48, uint48, uint48)"],
                 [
                     [
                         payoutToken.address,
@@ -110,6 +110,7 @@ describe("BondUniV3OracleL2 Tests", () => {
                         vestingLength,
                         "0",
                         bondDuration,
+                        "0",
                         "0",
                     ],
                 ]

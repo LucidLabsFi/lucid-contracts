@@ -53,13 +53,13 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
     /// @param recipient_   Address to receive payout
     /// @param payout_      Amount of payoutToken to be paid
     /// @param payoutToken_   Token to be paid out
-    /// @param terms_        Terms of the bond(vesting, start, linearDuration)
+    /// @param terms_        Terms of the bond(vesting, start, linearDuration, cliffDuration)
     /// @return expiry      Timestamp when the payout will vest
     function _handlePayout(
         address recipient_,
         uint256 payout_,
         ERC20 payoutToken_,
-        uint48[3] memory terms_ // [vesting, start, linearDuration]
+        uint48[4] memory terms_ // [vesting, start, linearDuration, cliffDuration]
     ) internal override returns (uint48 expiry) {
         uint48 vesting_ = terms_[0];
         // uint48 start_ = terms_[1];
@@ -95,7 +95,7 @@ contract BondFixedTermTeller is BondBaseTeller, IBondFixedTermTeller, ERC1155 {
             payoutToken_.approve(address(bondVesting), payout_);
             // Start is always a timestamp (in the past), so we want the vesting schedule to start now.
             expiry = terms_[1] + terms_[2];
-            bondVesting.createVestingSchedule(recipient_, address(payoutToken_), uint256(block.timestamp), 0, uint256(terms_[2]), 1, payout_);
+            bondVesting.createVestingSchedule(recipient_, address(payoutToken_), uint256(block.timestamp), terms_[3], uint256(terms_[2]), 1, payout_);
         }
     }
 

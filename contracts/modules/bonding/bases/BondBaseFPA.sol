@@ -172,7 +172,8 @@ abstract contract BondBaseFPA is IBondFPA, Context, Auth {
             start: start,
             conclusion: start + params_.duration,
             vesting: params_.vesting,
-            linearDuration: params_.linearDuration
+            linearDuration: params_.linearDuration,
+            cliffDuration: params_.cliffDuration
         });
 
         emit MarketCreated(marketId, address(params_.payoutToken), address(params_.quoteToken), params_.vesting, params_.formattedPrice);
@@ -188,8 +189,13 @@ abstract contract BondBaseFPA is IBondFPA, Context, Auth {
 
     /// @inheritdoc IBondAuctioneer
     function pullOwnership(uint256 id_) external override {
-        if (_msgSender() != newOwners[id_]) revert Auctioneer_NotAuthorized();
-        markets[id_].owner = newOwners[id_];
+        address newOwner = newOwners[id_];
+        if (_msgSender() != newOwner) revert Auctioneer_NotAuthorized();
+
+        BondMarket storage market = markets[id_];
+        // Only proceed if there's no callback or the new owner is callback authorized
+        if (market.callbackAddr != address(0) && !callbackAuthorized[newOwner]) revert Auctioneer_NotAuthorized();
+        market.owner = newOwner;
     }
 
     /// @inheritdoc IBondFPA
@@ -296,7 +302,7 @@ abstract contract BondBaseFPA is IBondFPA, Context, Auth {
             address callbackAddr,
             ERC20 payoutToken,
             ERC20 quoteToken,
-            uint48[3] memory vestTerms, //vesting, start, linearDuration
+            uint48[4] memory vestTerms, //vesting, start, linearDuration, cliffDuration
             uint256 maxPayout_
         )
     {
@@ -306,7 +312,7 @@ abstract contract BondBaseFPA is IBondFPA, Context, Auth {
             market.callbackAddr,
             market.payoutToken,
             market.quoteToken,
-            [terms[id_].vesting, terms[id_].start, terms[id_].linearDuration],
+            [terms[id_].vesting, terms[id_].start, terms[id_].linearDuration, terms[id_].cliffDuration],
             maxPayout(id_)
         );
     }

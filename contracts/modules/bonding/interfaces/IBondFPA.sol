@@ -26,6 +26,7 @@ interface IBondFPA is IBondAuctioneer {
         uint48 conclusion; // timestamp when market no longer offered
         uint48 vesting; // length of time from deposit to expiry if fixed-term, vesting timestamp if fixed-expiry
         uint48 linearDuration; // duration of linear vesting
+        uint48 cliffDuration; // duration of cliff before linear vesting starts
     }
 
     /// @notice             Parameters to create a new bond market
@@ -57,7 +58,8 @@ interface IBondFPA is IBondAuctioneer {
     /// @dev                        If start time is not provided (i.e. 0), the market will start immediately.
     /// @dev                    9. Market Duration (seconds) - Duration of the market in seconds.
     /// @dev                    10. Is fixed term ? Linear vesting duration (seconds) : Linear expiry (timestamp), 0 for non-linear vesting.
-    /// @dev                    11. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
+    /// @dev                    11. Cliff Duration (seconds) - Duration of the cliff vesting. 0 for no cliff. 0 if non-linear vesting or fixed expiry markets.
+    /// @dev                    12. Market scaling factor adjustment, ranges from -24 to +24 within the configured market bounds.
     /// @dev                        Should be calculated as: (payoutDecimals - quoteDecimals) - ((payoutPriceDecimals - quotePriceDecimals) / 2)
     /// @dev                        Providing a scaling factor adjustment that doesn't follow this formula could lead to under or overflow errors in the market.
     /// @return                 ID of new bond market
@@ -73,6 +75,7 @@ interface IBondFPA is IBondAuctioneer {
         uint48 start;
         uint48 duration;
         uint48 linearDuration;
+        uint48 cliffDuration;
         int8 scaleAdjustment;
     }
 
