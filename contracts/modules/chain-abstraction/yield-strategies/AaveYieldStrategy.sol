@@ -31,6 +31,7 @@ contract AaveYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgrad
     error Strategy_ZeroAddress();
     error Strategy_UnderlyingNotSupported();
     error Strategy_ZeroAmount();
+    error Strategy_DepositFailed();
 
     // ============ State Variables ============
 
@@ -106,11 +107,13 @@ contract AaveYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgrad
         underlyingAsset.safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve Aave pool to spend tokens
-        underlyingAsset.safeApprove(address(aavePool), amount);
+        underlyingAsset.forceApprove(address(aavePool), amount);
 
         // Supply to Aave - aTokens are minted to this contract
+        uint256 balanceBefore = aToken.balanceOf(address(this));
         aavePool.supply(address(underlyingAsset), amount, address(this), 0);
-
+        uint256 balanceAfter = aToken.balanceOf(address(this));
+        if ((balanceBefore + amount) < balanceAfter) revert Strategy_DepositFailed();
         // Update principal tracking
         _principalDeposited += amount;
 

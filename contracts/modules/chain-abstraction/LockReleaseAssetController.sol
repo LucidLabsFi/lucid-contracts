@@ -102,7 +102,7 @@ contract LockReleaseAssetController is AssetController {
         if (balance < amount) revert Controller_InsufficientLiquidity();
 
         // Approve and deposit to strategy
-        IERC20(token).safeApprove(address(yieldStrategy), amount);
+        IERC20(token).forceApprove(address(yieldStrategy), amount);
         yieldStrategy.deposit(amount);
 
         emit FundsDeployedToStrategy(amount);
@@ -205,7 +205,8 @@ contract LockReleaseAssetController is AssetController {
      * @param _amount The amount of tokens to be sent.
      */
     function _mint(address _to, uint256 _amount) internal override {
-        uint256 availableBalance = IERC20(token).balanceOf(address(this));
+        IERC20 tokenContract = IERC20(token);
+        uint256 availableBalance = tokenContract.balanceOf(address(this));
 
         // Check if it's needed to withdraw from strategy
         if (availableBalance < _amount) {
@@ -219,7 +220,10 @@ contract LockReleaseAssetController is AssetController {
         }
 
         // Transfer tokens to user
-        IERC20(token).safeTransfer(_to, _amount);
+        uint256 balanceBefore = tokenContract.balanceOf(address(this));
+        tokenContract.safeTransfer(_to, _amount);
+        uint256 balanceAfter = tokenContract.balanceOf(address(this));
+        if (balanceBefore - balanceAfter != _amount) revert Controller_TransferFailed();
         emit LiquidityRemoved(_amount);
     }
 
@@ -230,7 +234,13 @@ contract LockReleaseAssetController is AssetController {
      * @param _amount The amount of tokens to be locked.
      */
     function _burn(address _from, uint256 _amount) internal override {
-        IERC20(token).safeTransferFrom(_from, address(this), _amount);
+        IERC20 tokenContract = IERC20(token);
+
+        uint256 balanceBefore = tokenContract.balanceOf(address(this));
+        tokenContract.safeTransferFrom(_from, address(this), _amount);
+        uint256 balanceAfter = tokenContract.balanceOf(address(this));
+        if (balanceAfter - balanceBefore != _amount) revert Controller_TransferFailed();
+
         emit LiquidityAdded(_amount);
     }
 
