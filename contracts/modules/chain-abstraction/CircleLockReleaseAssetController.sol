@@ -33,6 +33,7 @@ contract CircleLockReleaseAssetController is LockReleaseAssetController {
      * @param _bridges The list of bridge adapter addresses that have limits set for minting and burning.
      * @param _mintingLimits The list of minting limits for the bridge adapters.
      * @param _burningLimits The list of burning limits for the bridge adapters.
+     * @param _yieldStrategy The initial yield strategy to use (or address(0) for none).
      */
     constructor(
         address[5] memory _addresses, //token, initialOwner, pauser, feeCollector, controllerAddress
@@ -42,7 +43,8 @@ contract CircleLockReleaseAssetController is LockReleaseAssetController {
         uint256[] memory _chainId,
         address[] memory _bridges,
         uint256[] memory _mintingLimits,
-        uint256[] memory _burningLimits
+        uint256[] memory _burningLimits,
+        address _yieldStrategy
     )
         LockReleaseAssetController(
             _addresses,
@@ -53,7 +55,8 @@ contract CircleLockReleaseAssetController is LockReleaseAssetController {
             _bridges,
             _mintingLimits,
             _burningLimits,
-            [bytes4(0x40c10f19), BURN_SELECTOR_SINGLE]
+            [bytes4(0x40c10f19), BURN_SELECTOR_SINGLE],
+            _yieldStrategy
         )
     {}
 
@@ -69,7 +72,7 @@ contract CircleLockReleaseAssetController is LockReleaseAssetController {
     /**
      * @notice Burns the allowed amount of USDC tokens that are locked in the contract.
      * @dev This function can only be called by an account with the BURN_LOCKED_TOKENS_ROLE.
-     * @dev It will revert if there are no tokens to burn.
+     * @dev It will revert if there are no tokens to burn. If a strategy is set, withdraw the necessary principal first.
      */
     function burnLockedUSDC() external onlyRole(BURN_LOCKED_TOKENS_ROLE) {
         if (allowedTokensToBurn == 0) revert Controller_NoTokensToBurn();

@@ -51,28 +51,30 @@ contract TWAPOracle is OwnableInit, ITWAPOracle {
         emit TWAPExpirationSet(_expiration);
     }
 
-    /// @notice Registers a TWAP using the provided attestation data.
+    /// @notice Registers TWAPs using the provided attestation data.
     /// @dev The attestation data must be signed by the TA signing key.
-    /// @param taData The transitive attestation containing the TWAP data.
-    function registerAttestation(bytes calldata taData) public virtual {
-        TAParserLib.FnCallClaims memory claims = TAParserLib.verifyTransitivelyAttestedFnCall(taSigner, taData);
-        (bytes memory baseToken, bytes memory quoteToken, uint256 price, uint256 chainId, uint64 timestamp) = abi.decode(
-            claims.Output,
-            (bytes, bytes, uint256, uint256, uint64)
-        );
+    /// @param taData An array containing different transitive attestations with the TWAP data.
+    function registerAttestation(bytes[] calldata taData) public virtual {
+        for (uint256 i = 0; i < taData.length; i++) {
+            TAParserLib.FnCallClaims memory claims = TAParserLib.verifyTransitivelyAttestedFnCall(taSigner, taData[i]);
+            (bytes memory baseToken, bytes memory quoteToken, uint256 price, uint256 chainId, uint64 timestamp) = abi.decode(
+                claims.Output,
+                (bytes, bytes, uint256, uint256, uint64)
+            );
 
-        address quoteTokenAddr;
-        address baseTokenAddr;
-        assembly {
-            baseTokenAddr := mload(add(baseToken, 20))
-            quoteTokenAddr := mload(add(quoteToken, 20))
+            address quoteTokenAddr;
+            address baseTokenAddr;
+            assembly {
+                baseTokenAddr := mload(add(baseToken, 20))
+                quoteTokenAddr := mload(add(quoteToken, 20))
+            }
+
+            if (baseTokenAddr == address(0) || quoteTokenAddr == address(0) || chainId != block.chainid) revert TWAPOracle_InvalidClaims();
+            if (twaps[baseTokenAddr][quoteTokenAddr].timestamp > timestamp) revert TWAPOracle_OutdatedData();
+            twaps[baseTokenAddr][quoteTokenAddr] = TWAP(price, timestamp);
+
+            emit TWAPRegistered(baseTokenAddr, quoteTokenAddr, price, timestamp);
         }
-
-        if (baseTokenAddr == address(0) || quoteTokenAddr == address(0) || chainId != block.chainid) revert TWAPOracle_InvalidClaims();
-        if (twaps[baseTokenAddr][quoteTokenAddr].timestamp > timestamp) revert TWAPOracle_OutdatedData();
-        twaps[baseTokenAddr][quoteTokenAddr] = TWAP(price, timestamp);
-
-        emit TWAPRegistered(baseTokenAddr, quoteTokenAddr, price, timestamp);
     }
 
     /// @notice Returns the TWAP data for a token. Would revert if the TWAP is expired or not found.

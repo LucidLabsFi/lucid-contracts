@@ -44,6 +44,16 @@ interface IBondTeller {
     /// @param fee_        Protocol fee in basis points (3 decimal places)
     function setProtocolFeeForIssuer(address issuer_, uint48 fee_) external;
 
+    /// @notice         Clear the protocol fee for a specific issuer, reverting them to use the default protocol fee
+    /// @notice         Must be guardian
+    /// @param issuer_      Address of the issuer of the bond
+    function clearProtocolFeeForIssuer(address issuer_) external;
+
+    /// @notice         Check if a protocol fee has been explicitly set for an issuer
+    /// @param issuer_  Address of the issuer of the bond
+    /// @return         True if a fee has been explicitly set, false if using default
+    function isProtocolFeeSetForIssuer(address issuer_) external view returns (bool);
+
     /// @notice         Set the protocol fee recipient for the protocol fees of all the bonds of an issuer
     /// @notice         If no fee recipient is set for an issuer, the default protocol fee recipient is used
     /// @notice         Must be guardian
