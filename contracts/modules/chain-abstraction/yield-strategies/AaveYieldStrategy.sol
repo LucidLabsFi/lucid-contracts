@@ -32,6 +32,7 @@ contract AaveYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgrad
     error Strategy_UnderlyingNotSupported();
     error Strategy_ZeroAmount();
     error Strategy_DepositFailed();
+    error Strategy_WithdrawnLessThanRequested();
 
     // ============ State Variables ============
 
@@ -132,6 +133,7 @@ contract AaveYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgrad
 
         // Withdraw from Aave directly to the controller
         withdrawn = aavePool.withdraw(address(underlyingAsset), amount, controller);
+        if (withdrawn != amount) revert Strategy_WithdrawnLessThanRequested();
 
         // Update principal tracking
         _principalDeposited -= withdrawn;

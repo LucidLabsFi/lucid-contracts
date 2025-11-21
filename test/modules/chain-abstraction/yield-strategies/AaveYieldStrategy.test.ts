@@ -242,6 +242,16 @@ describe("AaveYieldStrategy Tests", () => {
 
             expect(await strategy.getPrincipal()).to.equal(depositAmount.sub(withdraw1).sub(withdraw2));
         });
+
+        it("should revert if pool withdraws less than requested amount", async () => {
+            const withdrawAmount = ethers.utils.parseEther("500");
+            // Enable forced partial withdrawal in the mock
+            await aavePoolMock.setForcePartialWithdrawal(true);
+            await expect(strategy.connect(controllerSigner).withdraw(withdrawAmount)).to.be.revertedWithCustomError(
+                strategy,
+                "Strategy_WithdrawnLessThanRequested"
+            );
+        });
     });
 
     describe("withdrawYield", () => {
