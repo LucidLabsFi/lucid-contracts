@@ -13,6 +13,7 @@ contract AavePoolMock is ERC20 {
 
     address public admin;
     address public underlyingAsset;
+    bool public forcePartialWithdrawal;
 
     event Supply(address indexed reserve, address user, address indexed onBehalfOf, uint256 amount, uint16 indexed referralCode);
 
@@ -71,6 +72,11 @@ contract AavePoolMock is ERC20 {
             amountToWithdraw = poolBalance;
         }
 
+        // Force partial withdrawal for testing (return 50% of requested amount)
+        if (forcePartialWithdrawal && amount != type(uint256).max) {
+            amountToWithdraw = amountToWithdraw / 2;
+        }
+
         // Burn aTokens (this ERC20) from user
         _burn(msg.sender, amountToWithdraw);
 
@@ -102,6 +108,16 @@ contract AavePoolMock is ERC20 {
      */
     function setUnderlyingAsset(address _underlyingAsset) external {
         underlyingAsset = _underlyingAsset;
+    }
+
+    /**
+     * @notice Admin function to force partial withdrawals for testing
+     * @dev When enabled, withdrawals will only return 50% of requested amount
+     * @param _forcePartial Whether to force partial withdrawals
+     */
+    function setForcePartialWithdrawal(bool _forcePartial) external {
+        require(msg.sender == admin, "Only admin can set force partial withdrawal");
+        forcePartialWithdrawal = _forcePartial;
     }
 
     /**
