@@ -88,6 +88,7 @@ contract PolymerAdapter is BaseAdapter, ReentrancyGuard {
     /// @param proof A hex encoded proof from Polymer.
     function receiveMessage(bytes calldata proof) external virtual whenNotPaused {
         (uint32 originChainId, address sourceAdapter, bytes memory topics, bytes memory unindexedData) = PROVER.validateEvent(proof);
+        if (topics.length != 128) revert Adapter_InvalidProof();
         // If proof is invalid, PROVER.validateEvent() reverts
         address originAdapter = trustedAdapters[originChainId];
 

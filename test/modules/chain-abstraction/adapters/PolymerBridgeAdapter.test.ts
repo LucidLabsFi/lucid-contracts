@@ -313,6 +313,64 @@ describe("PolymerBridgeAdapter Tests", () => {
             randomProof = ethers.utils.defaultAbiCoder.encode(["bytes"], [randomBytes]);
             await expect(adapter.receiveMessage(randomProof)).to.be.reverted;
         });
+        it("should accept packed RelayViaPolymer topics with length 128", async () => {
+            const tx = await sourceController
+                .connect(user1Signer)
+                .sendMessage(
+                    [[counter.address], [counter.interface.encodeFunctionData("increment", [])], ethers.constants.HashZero, 1],
+                    31337,
+                    [adapter.address],
+                    [minGas],
+                    [bridgeOptions],
+                    {
+                        value: minGas,
+                    }
+                );
+            const receipt = await tx.wait();
+            const adapterInterface = adapter.interface;
+            const relayEventTopic = adapterInterface.getEventTopic("RelayViaPolymer");
+            const relayLog = receipt.logs.find(
+                (log: any) => log.address.toLowerCase() === adapter.address.toLowerCase() && log.topics[0] === relayEventTopic
+            );
+
+            const packedTopics = ethers.utils.solidityPack(["bytes32", "bytes32", "bytes32", "bytes32"], relayLog.topics);
+            expect(ethers.utils.arrayify(packedTopics).length).to.equal(128);
+
+            const msgCreatedEvent = receipt.events?.find((x: any) => x.event === "MessageCreated");
+            const messageIdFromEvent = msgCreatedEvent?.args?.messageId;
+            const parsedRelay = adapterInterface.parseLog(relayLog);
+            const rawMessage = parsedRelay.args.message;
+
+            const proofFromEventTopics = ethers.utils.defaultAbiCoder.encode(["bytes"], [ethers.utils.randomBytes(32)]);
+            await proverMock.setEvent(proofFromEventTopics, 31337, adapter.address, packedTopics, rawMessage);
+
+            expect(await destController.isReceivedMessageExecutable(messageIdFromEvent)).to.be.equal(false);
+
+            await adapter.receiveMessage(proofFromEventTopics);
+            expect(await destController.isReceivedMessageExecutable(messageIdFromEvent)).to.be.equal(true);
+        });
+        it("should revert if topics length is less than 128", async () => {
+            const eventHash = await adapter.RELAY_EVENT_HASH();
+            const indexedData = ethers.utils.defaultAbiCoder.encode(
+                ["bytes32", "uint256", "address", "bytes32"],
+                [eventHash, 31337, adapter.address, transferId]
+            );
+            const shortTopics = ethers.utils.hexDataSlice(indexedData, 0, 127);
+
+            await proverMock.setEvent(randomProof, 31337, adapter.address, shortTopics, unindexedData);
+            await expect(adapter.receiveMessage(randomProof)).to.be.revertedWithCustomError(adapter, "Adapter_InvalidProof");
+        });
+        it("should revert if topics length is greater than 128", async () => {
+            const eventHash = await adapter.RELAY_EVENT_HASH();
+            const indexedData = ethers.utils.defaultAbiCoder.encode(
+                ["bytes32", "uint256", "address", "bytes32"],
+                [eventHash, 31337, adapter.address, transferId]
+            );
+            const longTopics = ethers.utils.hexConcat([indexedData, "0x00"]);
+
+            await proverMock.setEvent(randomProof, 31337, adapter.address, longTopics, unindexedData);
+            await expect(adapter.receiveMessage(randomProof)).to.be.revertedWithCustomError(adapter, "Adapter_InvalidProof");
+        });
         it("should revert if the destination address is not the same as the adapter", async () => {
             // Set faulty bridged message to CrossL2ProverV2Mock
             const eventHash = await adapter.RELAY_EVENT_HASH();
