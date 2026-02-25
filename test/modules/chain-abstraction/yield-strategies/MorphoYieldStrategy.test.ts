@@ -118,6 +118,17 @@ describe("MorphoYieldStrategy Tests", () => {
                 })
             ).to.be.revertedWithCustomError(MorphoYieldStrategy, "Strategy_ZeroAddress");
         });
+
+        it("should revert if vault asset does not match the provided underlying asset", async () => {
+            const OtherToken = await ethers.getContractFactory("USDTMock");
+            const otherToken = await OtherToken.deploy("Other Token", "OTHR");
+
+            await expect(
+                upgrades.deployProxy(MorphoYieldStrategy, [vault.address, otherToken.address, controllerSigner.address, adminSigner.address], {
+                    initializer: "initialize",
+                })
+            ).to.be.revertedWithCustomError(MorphoYieldStrategy, "Strategy_UnderlyingNotSupported");
+        });
     });
 
     describe("deposit", () => {
@@ -175,7 +186,7 @@ describe("MorphoYieldStrategy Tests", () => {
                 expect(await strategy.getTotalBalance()).to.equal(deposit1.add(deposit2));
             });
 
-            it("should revert if vault returns fewer shares than minted", async () => {
+            it("should revert if vault returns more shares than minted", async () => {
                 const depositAmount = ethers.utils.parseEther("1000");
                 await vault.setBadDepositReturn(true);
                 await token.connect(controllerSigner).approve(strategy.address, depositAmount);
@@ -183,6 +194,21 @@ describe("MorphoYieldStrategy Tests", () => {
                     strategy,
                     "Strategy_DepositFailed"
                 );
+            });
+
+            it("should revert if a later deposit returns more shares than expected", async () => {
+                const firstDeposit = ethers.utils.parseEther("1000");
+                const secondDeposit = ethers.utils.parseEther("500");
+
+                await token.connect(controllerSigner).approve(strategy.address, firstDeposit.add(secondDeposit));
+                await strategy.connect(controllerSigner).deposit(firstDeposit);
+                await vault.setBadDepositReturn(true);
+
+                await expect(strategy.connect(controllerSigner).deposit(secondDeposit)).to.be.revertedWithCustomError(
+                    strategy,
+                    "Strategy_DepositFailed"
+                );
+                expect(await strategy.getPrincipal()).to.equal(firstDeposit);
             });
         });
     });

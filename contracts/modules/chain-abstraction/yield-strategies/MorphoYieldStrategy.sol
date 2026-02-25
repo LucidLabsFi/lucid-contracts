@@ -10,8 +10,8 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 /**
  * @title MorphoYieldStrategy
- * @notice Yield strategy implementation for Morpho Vaults V1 or V2
- * @dev This contract holds share tokens and manages deposits/withdrawals to a Morpho Vault
+ * @notice Yield strategy implementation for Morpho Vaults V1 or V2. Does not work with fee on transfer underlying tokens.
+ * @dev This contract holds share tokens and manages deposits/withdrawals to/from a Morpho Vault
  */
 contract MorphoYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
@@ -29,6 +29,7 @@ contract MorphoYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgr
     error Strategy_InsufficientPrincipal();
     error Strategy_InsufficientYield();
     error Strategy_ZeroAddress();
+    error Strategy_UnderlyingNotSupported();
     error Strategy_ZeroAmount();
     error Strategy_DepositFailed();
     error Strategy_CallFailed();
@@ -79,6 +80,10 @@ contract MorphoYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgr
         if (_vault == address(0) || _underlyingAsset == address(0) || _assetController == address(0) || _admin == address(0)) {
             revert Strategy_ZeroAddress();
         }
+        // Asset from vault should match the provided underlying asset
+        if (IERC4626(_vault).asset() != _underlyingAsset) {
+            revert Strategy_UnderlyingNotSupported();
+        }
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -118,7 +123,7 @@ contract MorphoYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgr
         uint256 sharesBefore = vault.balanceOf(address(this));
         uint256 sharesMinted = vault.deposit(amount, address(this));
         uint256 sharesAfter = vault.balanceOf(address(this));
-        if ((sharesBefore + sharesMinted) < sharesAfter) revert Strategy_DepositFailed();
+        if (sharesAfter < (sharesBefore + sharesMinted)) revert Strategy_DepositFailed();
         // Update principal tracking
         _principalDeposited += amount;
 
@@ -135,11 +140,11 @@ contract MorphoYieldStrategy is Initializable, IYieldStrategy, AccessControlUpgr
         if (amount == 0) revert Strategy_ZeroAmount();
         if (amount > _principalDeposited) revert Strategy_InsufficientPrincipal();
 
-        // Withdraw from Vault directly to the controller
-        vault.withdraw(amount, controller, address(this));
-
         // Update principal tracking
         _principalDeposited -= amount;
+
+        // Withdraw from Vault directly to the controller
+        vault.withdraw(amount, controller, address(this));
 
         emit PrincipalWithdrawn(amount, _principalDeposited);
         return amount;

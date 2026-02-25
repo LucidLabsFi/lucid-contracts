@@ -21,7 +21,7 @@ contract ERC4626Mock is ERC4626 {
     function deposit(uint256 assets, address receiver) public override returns (uint256 shares) {
         shares = super.deposit(assets, receiver);
         if (badDepositReturn && shares > 0) {
-            return shares - 1;
+            return shares + 1;
         }
         return shares;
     }
