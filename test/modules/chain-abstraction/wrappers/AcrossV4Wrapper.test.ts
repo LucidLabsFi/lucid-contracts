@@ -15,6 +15,11 @@ describe("ControllerWrapper Tests", () => {
     // random address for spoke pool
     const spokePool = ethers.Wallet.createRandom().address;
 
+    // Helper: convert address to left-padded bytes32 (lowercase)
+    const addressToBytes32 = (addr: string) => {
+        return ethers.utils.hexZeroPad(addr, 32).toLowerCase();
+    };
+
     // NOTE 100_000 is 100%
 
     beforeEach(async () => {
@@ -262,6 +267,125 @@ describe("ControllerWrapper Tests", () => {
             const [fee, net] = await acrossWrapper.quote(amount);
             expect(fee).to.equal(0);
             expect(net).to.equal(amount);
+        });
+    });
+
+    describe("deposit (bytes32-based)", () => {
+        beforeEach(async () => {
+            acrossWrapper = await AcrossWrapper.deploy(spokePool, ownerSigner.address, treasurySigner.address, 1000); // 1%
+        });
+
+        it("should accept deposits with bytes32 parameters", async () => {
+            const depositInput = {
+                depositor: addressToBytes32(user1Signer.address),
+                recipient: addressToBytes32(user2Signer.address),
+                inputToken: addressToBytes32(token.address),
+                outputToken: addressToBytes32(token.address),
+                inputAmount: ethers.utils.parseEther("10"),
+                outputAmount: ethers.utils.parseEther("9.9"),
+                destinationChainId: 137,
+                exclusiveRelayer: addressToBytes32(ethers.constants.AddressZero),
+                quoteTimestamp: Math.floor(Date.now() / 1000),
+                fillDeadline: Math.floor(Date.now() / 1000) + 3600,
+                exclusivityParameter: 0,
+                message: "0x",
+                emittedMessage: "0x",
+                useNative: false,
+            };
+
+            await token.connect(user1Signer).approve(acrossWrapper.address, ethers.utils.parseEther("10"));
+
+            await expect(acrossWrapper.connect(user1Signer).deposit(depositInput)).to.emit(acrossWrapper, "TransferSent").withArgs(
+                user1Signer.address,
+                addressToBytes32(token.address),
+                137,
+                addressToBytes32(token.address),
+                addressToBytes32(user2Signer.address),
+                false,
+                ethers.utils.parseEther("10"),
+                ethers.utils.parseEther("9.9"), // 10 - 1% fee
+                ethers.utils.parseEther("9.9"),
+                "0x"
+            );
+        });
+    });
+
+    describe("depositV3 (address-based)", () => {
+        beforeEach(async () => {
+            acrossWrapper = await AcrossWrapper.deploy(spokePool, ownerSigner.address, treasurySigner.address, 1000); // 1%
+        });
+
+        it("should accept deposits with address parameters", async () => {
+            const depositInput = {
+                depositor: user1Signer.address,
+                recipient: user2Signer.address,
+                inputToken: token.address,
+                outputToken: token.address,
+                inputAmount: ethers.utils.parseEther("10"),
+                outputAmount: ethers.utils.parseEther("9.9"),
+                destinationChainId: 137,
+                exclusiveRelayer: ethers.constants.AddressZero,
+                quoteTimestamp: Math.floor(Date.now() / 1000),
+                fillDeadline: Math.floor(Date.now() / 1000) + 3600,
+                exclusivityParameter: 0,
+                message: "0x",
+                emittedMessage: "0x",
+                useNative: false,
+            };
+
+            await token.connect(user1Signer).approve(acrossWrapper.address, ethers.utils.parseEther("10"));
+
+            await expect(acrossWrapper.connect(user1Signer).depositV3(depositInput)).to.emit(acrossWrapper, "TransferSent").withArgs(
+                user1Signer.address,
+                addressToBytes32(token.address),
+                137,
+                addressToBytes32(token.address),
+                addressToBytes32(user2Signer.address),
+                false,
+                ethers.utils.parseEther("10"),
+                ethers.utils.parseEther("9.9"), // 10 - 1% fee
+                ethers.utils.parseEther("9.9"),
+                "0x"
+            );
+        });
+    });
+
+    describe("depositNow (bytes32-based with fillDeadlineOffset)", () => {
+        beforeEach(async () => {
+            acrossWrapper = await AcrossWrapper.deploy(spokePool, ownerSigner.address, treasurySigner.address, 1000); // 1%
+        });
+
+        it("should accept deposits with bytes32 parameters and fillDeadlineOffset", async () => {
+            const depositInput = {
+                depositor: addressToBytes32(user1Signer.address),
+                recipient: addressToBytes32(user2Signer.address),
+                inputToken: addressToBytes32(token.address),
+                outputToken: addressToBytes32(token.address),
+                inputAmount: ethers.utils.parseEther("10"),
+                outputAmount: ethers.utils.parseEther("9.9"),
+                destinationChainId: 137,
+                exclusiveRelayer: addressToBytes32(ethers.constants.AddressZero),
+                fillDeadlineOffset: 3600, // 1 hour offset
+                exclusivityDeadline: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+                message: "0x",
+                emittedMessage: "0x",
+                useNative: false,
+            };
+
+            await token.connect(user1Signer).approve(acrossWrapper.address, ethers.utils.parseEther("10"));
+
+            await expect(acrossWrapper.connect(user1Signer).depositNow(depositInput)).to.emit(acrossWrapper, "TransferSent").withArgs(
+                user1Signer.address,
+                addressToBytes32(token.address),
+                137,
+                addressToBytes32(token.address),
+                addressToBytes32(user2Signer.address),
+                false,
+                ethers.utils.parseEther("10"),
+                ethers.utils.parseEther("9.9"), // 10 - 1% fee
+                ethers.utils.parseEther("9.9"),
+                "0x"
+            );
         });
     });
 });

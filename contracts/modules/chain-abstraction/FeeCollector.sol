@@ -42,23 +42,21 @@ contract FeeCollector is Ownable2StepInit {
     }
 
     /**
-     * @notice Collects the fee from the sender
+     * @notice Collects an exact fee amount from the sender
      * @dev Approval needs to be given to this contract prior to calling this function
      * @param token The token address
-     * @param amount The amount to collect
+     * @param amount The exact fee amount to collect
      */
     function collect(address token, uint256 amount) external {
-        uint256 fee = quote(amount);
-        if (fee > 0) {
-            IERC20(token).safeTransferFrom(_msgSender(), address(this), fee);
-            IERC20(token).safeTransfer(treasury, fee);
-            emit FeeReceived(token, fee);
+        if (amount > 0) {
+            IERC20(token).safeTransferFrom(_msgSender(), treasury, amount);
+            emit FeeReceived(token, amount);
         }
     }
 
     /**
      * @notice Quotes the fee for a given amount
-     * @dev External contracts should quote the fee to give an approval before calling collect
+     * @dev External contracts should quote the fee and call collect with that exact quoted amount
      * @param amount The amount to quote
      * @return fee The fee amount
      */

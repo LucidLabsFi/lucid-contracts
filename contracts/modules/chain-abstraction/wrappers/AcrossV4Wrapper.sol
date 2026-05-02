@@ -13,10 +13,10 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     // ===== Events =====
     event TransferSent(
         address indexed sender,
-        address indexed inputToken,
+        bytes32 indexed inputToken,
         uint256 indexed destChainId,
-        address outputToken,
-        address recipient,
+        bytes32 outputToken,
+        bytes32 recipient,
         bool usedNative,
         uint256 grossInputAmount,
         uint256 netInputAmount,
@@ -37,6 +37,39 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     error Wrapper_SpokeCallFailed();
     error Wrapper_MsgValueInputAmountMismatch();
     error Wrapper_ZeroAddress();
+
+    struct DepositInputBytes32 {
+        bytes32 depositor;
+        bytes32 recipient;
+        bytes32 inputToken;
+        bytes32 outputToken;
+        uint256 inputAmount; // gross amount the user provides
+        uint256 outputAmount; // corresponds to NET inputAmount passed onward
+        uint256 destinationChainId;
+        bytes32 exclusiveRelayer;
+        uint32 quoteTimestamp;
+        uint32 fillDeadline;
+        uint32 exclusivityParameter;
+        bytes message; // passed as is to Across
+        bytes emittedMessage; // emitted as is from this contract
+        bool useNative; // true only when inputToken is wrapped-native and msg.value == inputAmount
+    }
+
+    struct DepositInputBytes32Now {
+        bytes32 depositor;
+        bytes32 recipient;
+        bytes32 inputToken;
+        bytes32 outputToken;
+        uint256 inputAmount; // gross amount the user provides
+        uint256 outputAmount; // corresponds to NET inputAmount passed onward
+        uint256 destinationChainId;
+        bytes32 exclusiveRelayer;
+        uint32 fillDeadlineOffset;
+        uint32 exclusivityDeadline;
+        bytes message; // passed as is to Across
+        bytes emittedMessage; // emitted as is from this contract
+        bool useNative; // true only when inputToken is wrapped-native and msg.value == inputAmount
+    }
 
     struct DepositInput {
         address depositor;
@@ -137,17 +170,41 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     // ===== Entrypoint =====
 
     /**
-     * @notice Deposit assets to be transferred via Across V4 SpokePool
+     * @notice Deposit assets to be transferred via Across V4 SpokePool (bytes32-based interface)
+     * An ERC20 approval of the amount must be given to this contract prior to calling this function if not using native.
+     * @param d The deposit input parameters with bytes32 types
+     */
+    function deposit(DepositInputBytes32 calldata d) external payable nonReentrant whenNotPaused {
+        if (d.useNative) {
+            _depositNativeBytes32(d);
+        } else {
+            _depositERC20Bytes32(d);
+        }
+    }
+
+    /**
+     * @notice Deposit assets to be transferred via Across V4 SpokePool using depositNow (bytes32-based with fillDeadlineOffset)
+     * An ERC20 approval of the amount must be given to this contract prior to calling this function if not using native.
+     * @param d The deposit input parameters with bytes32 types and fillDeadlineOffset
+     */
+    function depositNow(DepositInputBytes32Now calldata d) external payable nonReentrant whenNotPaused {
+        if (d.useNative) {
+            _depositNativeBytes32Now(d);
+        } else {
+            _depositERC20Bytes32Now(d);
+        }
+    }
+
+    /**
+     * @notice Deposit assets to be transferred via Across V4 SpokePool (legacy address-based interface)
      * An ERC20 approval of the amount must be given to this contract prior to calling this function if not using native.
      * @param d The deposit input parameters
      */
     function depositV3(DepositInput calldata d) external payable nonReentrant whenNotPaused {
-        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
-
         if (d.useNative) {
-            _depositNativeWithFee(d, fee, net);
+            _depositNative(d);
         } else {
-            _depositERC20WithFee(d, fee, net);
+            _depositERC20(d);
         }
     }
 
@@ -163,17 +220,14 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
 
     // ===== Internal helpers =====
 
-    function _depositNativeWithFee(DepositInput calldata d, uint256 fee, uint256 net) internal {
+    function _depositNativeBytes32(DepositInputBytes32 calldata d) internal {
         if (msg.value != d.inputAmount) revert Wrapper_MsgValueInputAmountMismatch();
 
-        // Send fee to treasury
-        if (fee > 0) {
-            (bool success, ) = treasury.call{value: fee}("");
-            if (!success) revert Wrapper_TransferFailed();
-        }
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
+        _sendNativeFeeToTreasury(fee);
 
-        // Forward NET ETH and NET inputAmount to SpokePool
-        _callSpokeWithLowStack(d, net, net);
+        bytes memory data = _encodeDepositCalldata(d, net);
+        _callSpokePool(data, net);
 
         emit TransferSent(
             msg.sender,
@@ -189,26 +243,15 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         );
     }
 
-    function _depositERC20WithFee(DepositInput calldata d, uint256 fee, uint256 net) internal {
+    function _depositERC20Bytes32(DepositInputBytes32 calldata d) internal {
         if (msg.value != 0) revert Wrapper_MsgValueNotZero();
-        IERC20 token = IERC20(d.inputToken);
+        IERC20 token = IERC20(_bytes32ToAddress(d.inputToken));
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
 
-        // Pull gross, disallow fee-on-transfer by checking balance delta
-        uint256 balBefore = token.balanceOf(address(this));
-        token.safeTransferFrom(msg.sender, address(this), d.inputAmount);
-        uint256 received = token.balanceOf(address(this)) - balBefore;
-        if (received != d.inputAmount) revert Wrapper_FeeOnTransferToken();
+        _pullTokenAndTakeFee(token, d.inputAmount, fee);
 
-        // Send fee to treasury
-        if (fee > 0) token.safeTransfer(treasury, fee);
-
-        // Approve only NET, call SpokePool, then zero allowance
-        token.safeApprove(SPOKE_POOL, 0);
-        token.safeApprove(SPOKE_POOL, net);
-
-        _callSpokeWithLowStack(d, net, 0);
-
-        token.safeApprove(SPOKE_POOL, 0);
+        bytes memory data = _encodeDepositCalldata(d, net);
+        _approveCallAndReset(token, net, data);
 
         emit TransferSent(
             msg.sender,
@@ -224,34 +267,215 @@ contract AcrossV4Wrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         );
     }
 
-    /// @dev Build calldata and do a low-level call. This avoids stack-too-deep at the callsite.
-    /// @param netInputAmount The amount passed to SpokePool as inputAmount (after fee).
-    /// @param value The ETH value sent alongside (0 or netInputAmount for native).
-    function _callSpokeWithLowStack(DepositInput calldata d, uint256 netInputAmount, uint256 value) internal {
-        bytes memory data = abi.encodeWithSelector(
-            V3SpokePoolInterface.depositV3.selector,
-            d.depositor,
-            d.recipient,
-            d.inputToken,
-            d.outputToken,
-            netInputAmount, // pass NET amount
-            d.outputAmount,
-            d.destinationChainId,
-            d.exclusiveRelayer,
-            d.quoteTimestamp,
-            d.fillDeadline,
-            d.exclusivityParameter,
-            d.message
-        );
+    function _depositNativeBytes32Now(DepositInputBytes32Now calldata d) internal {
+        if (msg.value != d.inputAmount) revert Wrapper_MsgValueInputAmountMismatch();
 
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
+        _sendNativeFeeToTreasury(fee);
+
+        bytes memory data = _encodeDepositNowCalldata(d, net);
+        _callSpokePool(data, net);
+
+        emit TransferSent(
+            msg.sender,
+            d.inputToken,
+            d.destinationChainId,
+            d.outputToken,
+            d.recipient,
+            true,
+            d.inputAmount,
+            net,
+            d.outputAmount,
+            d.emittedMessage
+        );
+    }
+
+    function _depositERC20Bytes32Now(DepositInputBytes32Now calldata d) internal {
+        if (msg.value != 0) revert Wrapper_MsgValueNotZero();
+        IERC20 token = IERC20(_bytes32ToAddress(d.inputToken));
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
+
+        _pullTokenAndTakeFee(token, d.inputAmount, fee);
+
+        bytes memory data = _encodeDepositNowCalldata(d, net);
+        _approveCallAndReset(token, net, data);
+
+        emit TransferSent(
+            msg.sender,
+            d.inputToken,
+            d.destinationChainId,
+            d.outputToken,
+            d.recipient,
+            false,
+            d.inputAmount,
+            net,
+            d.outputAmount,
+            d.emittedMessage
+        );
+    }
+
+    function _depositNative(DepositInput calldata d) internal {
+        if (msg.value != d.inputAmount) revert Wrapper_MsgValueInputAmountMismatch();
+
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
+        _sendNativeFeeToTreasury(fee);
+
+        bytes memory data = _encodeDepositCalldataV3(d, net);
+        _callSpokePool(data, net);
+
+        emit TransferSent(
+            msg.sender,
+            _addressToBytes32(d.inputToken),
+            d.destinationChainId,
+            _addressToBytes32(d.outputToken),
+            _addressToBytes32(d.recipient),
+            true,
+            d.inputAmount,
+            net,
+            d.outputAmount,
+            d.emittedMessage
+        );
+    }
+
+    function _depositERC20(DepositInput calldata d) internal {
+        if (msg.value != 0) revert Wrapper_MsgValueNotZero();
+        IERC20 token = IERC20(d.inputToken);
+        (uint256 fee, uint256 net) = _computeFeeAndNet(d.inputAmount);
+
+        _pullTokenAndTakeFee(token, d.inputAmount, fee);
+
+        bytes memory data = _encodeDepositCalldataV3(d, net);
+        _approveCallAndReset(token, net, data);
+
+        emit TransferSent(
+            msg.sender,
+            _addressToBytes32(d.inputToken),
+            d.destinationChainId,
+            _addressToBytes32(d.outputToken),
+            _addressToBytes32(d.recipient),
+            false,
+            d.inputAmount,
+            net,
+            d.outputAmount,
+            d.emittedMessage
+        );
+    }
+
+    /// @dev Send native ETH fee to treasury.
+    function _sendNativeFeeToTreasury(uint256 fee) internal {
+        if (fee > 0) {
+            (bool success, ) = treasury.call{value: fee}("");
+            if (!success) revert Wrapper_TransferFailed();
+            emit FeeTaken(address(0), treasury, fee);
+        }
+    }
+
+    /// @dev Pull tokens from sender and send fee to treasury
+    function _pullTokenAndTakeFee(IERC20 token, uint256 amount, uint256 fee) internal {
+        uint256 balBefore = token.balanceOf(address(this));
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = token.balanceOf(address(this)) - balBefore;
+        if (received != amount) revert Wrapper_FeeOnTransferToken();
+
+        if (fee > 0) {
+            token.safeTransfer(treasury, fee);
+            emit FeeTaken(address(token), treasury, fee);
+        }
+    }
+
+    /// @dev Approve, call SpokePool, then reset approval.
+    function _approveCallAndReset(IERC20 token, uint256 amount, bytes memory data) internal {
+        token.safeApprove(SPOKE_POOL, 0);
+        token.safeApprove(SPOKE_POOL, amount);
+        _callSpokePool(data, 0);
+        token.safeApprove(SPOKE_POOL, 0);
+    }
+
+    /// @dev Call SpokePool with encoded data and optional ETH value.
+    function _callSpokePool(bytes memory data, uint256 value) internal {
         (bool success, ) = payable(SPOKE_POOL).call{value: value}(data);
         if (!success) revert Wrapper_SpokeCallFailed();
+    }
+
+    /// @dev Encode deposit() calldata with bytes32 parameters.
+    function _encodeDepositCalldata(DepositInputBytes32 calldata d, uint256 netInputAmount) internal pure returns (bytes memory) {
+        return
+            abi.encodeWithSelector(
+                V3SpokePoolInterface.deposit.selector,
+                d.depositor,
+                d.recipient,
+                d.inputToken,
+                d.outputToken,
+                netInputAmount,
+                d.outputAmount,
+                d.destinationChainId,
+                d.exclusiveRelayer,
+                d.quoteTimestamp,
+                d.fillDeadline,
+                d.exclusivityParameter,
+                d.message
+            );
+    }
+
+    /// @dev Encode depositNow() calldata with bytes32 parameters.
+    function _encodeDepositNowCalldata(DepositInputBytes32Now calldata d, uint256 netInputAmount) internal pure returns (bytes memory) {
+        return
+            abi.encodeWithSelector(
+                V3SpokePoolInterface.depositNow.selector,
+                d.depositor,
+                d.recipient,
+                d.inputToken,
+                d.outputToken,
+                netInputAmount,
+                d.outputAmount,
+                d.destinationChainId,
+                d.exclusiveRelayer,
+                d.fillDeadlineOffset,
+                d.exclusivityDeadline,
+                d.message
+            );
+    }
+
+    /// @dev Encode depositV3() calldata with address parameters.
+    function _encodeDepositCalldataV3(DepositInput calldata d, uint256 netInputAmount) internal pure returns (bytes memory) {
+        return
+            abi.encodeWithSelector(
+                V3SpokePoolInterface.depositV3.selector,
+                d.depositor,
+                d.recipient,
+                d.inputToken,
+                d.outputToken,
+                netInputAmount,
+                d.outputAmount,
+                d.destinationChainId,
+                d.exclusiveRelayer,
+                d.quoteTimestamp,
+                d.fillDeadline,
+                d.exclusivityParameter,
+                d.message
+            );
     }
 
     function _computeFeeAndNet(uint256 gross) internal view returns (uint256 fee, uint256 net) {
         if (feeRate == 0 || gross == 0) return (0, gross);
         fee = (gross * feeRate) / RATE_DENOMINATOR;
         net = gross - fee;
+    }
+
+    /**
+     * @dev Converts an address to bytes32.
+     * @param _addr The address to convert.
+     * @return The bytes32 representation of the address.
+     */
+    function _addressToBytes32(address _addr) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(_addr)));
+    }
+
+    // @dev Converts a bytes32 to an address.
+    // @param _b The bytes32 to convert.
+    // @return The address representation of the bytes32.
+    function _bytes32ToAddress(bytes32 _b) internal pure returns (address) {
+        return address(uint160(uint256(_b)));
     }
 
     receive() external payable {}

@@ -371,6 +371,39 @@ describe("CircleLockReleaseAssetController Tests", () => {
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), ownerSigner.address)).to.equal(false);
         });
     });
+    describe("transferTo - multi bridge fee collection", () => {
+        beforeEach(async () => {
+            relayerFee = ethers.utils.parseEther("0.001");
+            amountToBridge = ethers.utils.parseEther("100");
+            await sourceController.setMinBridges(1);
+            await sourceToken.mint(ownerSigner.address, amountToBridge);
+            const feeAmount = await feeCollector.quote(amountToBridge);
+            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge.add(feeAmount));
+        });
+        it("should forward the full fee to treasury and only lock the bridged amount", async () => {
+            const feeAmount = await feeCollector.quote(amountToBridge);
+            const treasuryBalanceBefore = await sourceToken.balanceOf(treasuryAddress);
+            const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+            await sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
+                user1Signer.address,
+                amountToBridge,
+                false,
+                100,
+                [sourceBridgeAdapter.address],
+                [relayerFee],
+                [bridgeOptions],
+                {
+                    value: relayerFee,
+                }
+            );
+
+            const treasuryBalanceAfter = await sourceToken.balanceOf(treasuryAddress);
+            const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+            expect(treasuryBalanceAfter.sub(treasuryBalanceBefore)).to.be.equal(feeAmount);
+            expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.be.equal(amountToBridge);
+        });
+    });
     describe("setAllowedTokensToBurn", () => {
         beforeEach(async () => {});
         it("should set the amount of tokens to burn if the caller is an admin", async () => {

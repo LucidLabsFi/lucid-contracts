@@ -10,6 +10,7 @@ describe("ControllerWrapper Tests", () => {
     let treasurySigner: SignerWithAddress;
     let token: Contract;
     let relayDepositoryMock: Contract;
+    let relayApprovalProxyV3Mock: Contract;
     let relayWrapper: Contract;
     let RelayWrapper: any;
     let id: string;
@@ -34,6 +35,8 @@ describe("ControllerWrapper Tests", () => {
         );
         const RelayDepositoryMock = await ethers.getContractFactory("RelayDepositoryMock");
         relayDepositoryMock = await RelayDepositoryMock.deploy();
+        const RelayApprovalProxyV3Mock = await ethers.getContractFactory("RelayApprovalProxyV3Mock");
+        relayApprovalProxyV3Mock = await RelayApprovalProxyV3Mock.deploy();
 
         RelayWrapper = await ethers.getContractFactory("RelayWrapper");
     });
@@ -42,36 +45,48 @@ describe("ControllerWrapper Tests", () => {
         beforeEach(async () => {});
 
         it("should set the owner", async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
             expect(await relayWrapper.owner()).to.equal(ownerSigner.address);
         });
 
         it("should set the treasury and feeRate", async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 1234);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 1234);
             expect(await relayWrapper.treasury()).to.equal(treasurySigner.address);
             expect(await relayWrapper.feeRate()).to.equal(1234);
         });
 
+        it("should set relay integration addresses", async () => {
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 0);
+            expect(await relayWrapper.RELAY_DEPOSITORY()).to.equal(relayDepositoryMock.address);
+            expect(await relayWrapper.RELAY_APPROVAL_PROXY()).to.equal(relayApprovalProxyV3Mock.address);
+        });
+
         it("should revert if treasury is zero and feeRate > 0", async () => {
             await expect(
-                RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, ethers.constants.AddressZero, 100)
+                RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, ethers.constants.AddressZero, 100)
             ).to.be.revertedWithCustomError(RelayWrapper, "Wrapper_TreasuryZeroAddress");
         });
 
         it("should revert if feeRate > MAX_FEE_RATE", async () => {
             await expect(
-                RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 5001)
+                RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 5001)
             ).to.be.revertedWithCustomError(RelayWrapper, "Wrapper_InvalidFeeRate");
         });
 
         it("should revert if relay depository is zero address", async () => {
             await expect(
-                RelayWrapper.deploy(ethers.constants.AddressZero, ownerSigner.address, treasurySigner.address, 0)
+                RelayWrapper.deploy(ethers.constants.AddressZero, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 0)
             ).to.be.revertedWithCustomError(RelayWrapper, "Wrapper_RelayDepositoryZeroAddress");
         });
 
+        it("should revert if relay approval proxy is zero address", async () => {
+            await expect(
+                RelayWrapper.deploy(relayDepositoryMock.address, ethers.constants.AddressZero, ownerSigner.address, treasurySigner.address, 0)
+            ).to.be.revertedWithCustomError(RelayWrapper, "Wrapper_RelayApprovalProxyZeroAddress");
+        });
+
         it("should emit TreasurySet and FeeRateSet events", async () => {
-            expect(await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100))
+            expect(await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100))
                 .to.emit(RelayWrapper, "TreasurySet")
                 .withArgs(ethers.constants.AddressZero, treasurySigner.address)
                 .and.to.emit(RelayWrapper, "FeeRateSet")
@@ -81,7 +96,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("setTreasury", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
         });
 
         it("should allow owner to set treasury", async () => {
@@ -107,7 +122,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("setFeeRate", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
         });
 
         it("should allow owner to set feeRate", async () => {
@@ -127,7 +142,7 @@ describe("ControllerWrapper Tests", () => {
 
         it("should revert if newRate > 0 and treasury is zero", async () => {
             // set treasury to zero first
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, ethers.constants.AddressZero, 0);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, ethers.constants.AddressZero, 0);
             await expect(relayWrapper.connect(ownerSigner).setFeeRate(100)).to.be.revertedWithCustomError(
                 relayWrapper,
                 "Wrapper_TreasuryZeroAddress"
@@ -137,7 +152,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("pause", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
         });
 
         it("should allow owner to pause the contract", async () => {
@@ -154,7 +169,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("unpause", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
             await relayWrapper.connect(ownerSigner).pause();
         });
 
@@ -173,7 +188,7 @@ describe("ControllerWrapper Tests", () => {
     describe("rescueTokens", () => {
         let erc20: Contract;
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
             const Token = await ethers.getContractFactory("XERC20Votes");
             erc20 = await Token.deploy(
                 "Test Token",
@@ -210,7 +225,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("rescueETH", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 100);
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 100);
             // Send ETH to contract
             await ownerSigner.sendTransaction({to: relayWrapper.address, value: ethers.utils.parseEther("1")});
         });
@@ -240,7 +255,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("quote", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 1000); // 1%
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 1000); // 1%
         });
 
         it("should return correct fee and net", async () => {
@@ -267,7 +282,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("depositErc20", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 1000); // 1%
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 1000); // 1%
             id = ethers.utils.hexlify(ethers.utils.randomBytes(32));
         });
 
@@ -312,7 +327,7 @@ describe("ControllerWrapper Tests", () => {
 
     describe("depositNative", () => {
         beforeEach(async () => {
-            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, ownerSigner.address, treasurySigner.address, 2000); // 2%
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 2000); // 2%
             id = ethers.utils.hexlify(ethers.utils.randomBytes(32));
         });
 
@@ -342,6 +357,91 @@ describe("ControllerWrapper Tests", () => {
         it("should revert if paused", async () => {
             await relayWrapper.connect(ownerSigner).pause();
             await expect(relayWrapper.connect(user1Signer).depositNative(id, "0x5678", {value: 1})).to.be.revertedWith("Pausable: paused");
+        });
+    });
+
+    describe("transferAndMulticall", () => {
+        beforeEach(async () => {
+            relayWrapper = await RelayWrapper.deploy(relayDepositoryMock.address, relayApprovalProxyV3Mock.address, ownerSigner.address, treasurySigner.address, 2000);
+        });
+
+        it("should call relay approval proxy without charging fees and emit the message", async () => {
+            const amount = ethers.utils.parseEther("50");
+            const treasuryBefore = await token.balanceOf(treasurySigner.address);
+
+            await token.connect(user1Signer).approve(relayWrapper.address, amount);
+            const returnData = await relayWrapper
+                .connect(user1Signer)
+                .callStatic.transferAndMulticall([token.address], [amount], [], user1Signer.address, user2Signer.address, "0xbeef", "0x9876");
+            expect(returnData.length).to.equal(0);
+
+            await expect(
+                relayWrapper
+                    .connect(user1Signer)
+                    .transferAndMulticall([token.address], [amount], [], user1Signer.address, user2Signer.address, "0xbeef", "0x9876")
+            )
+                .to.emit(relayWrapper, "MulticallTransferSent")
+                .withArgs(user1Signer.address, "0x9876");
+
+            // No fee should be transferred to treasury for this path.
+            expect(await token.balanceOf(treasurySigner.address)).to.equal(treasuryBefore);
+            // Full amount should be pulled by RelayApprovalProxyV3 mock.
+            expect(await token.balanceOf(relayApprovalProxyV3Mock.address)).to.equal(amount);
+            // Wrapper should reset allowance after execution.
+            expect(await token.allowance(relayWrapper.address, relayApprovalProxyV3Mock.address)).to.equal(0);
+        });
+
+        it("should support duplicate token entries using cumulative approval", async () => {
+            const amount1 = ethers.utils.parseEther("10");
+            const amount2 = ethers.utils.parseEther("15");
+            const total = amount1.add(amount2);
+            const treasuryBefore = await token.balanceOf(treasurySigner.address);
+
+            await token.connect(user1Signer).approve(relayWrapper.address, total);
+            await expect(
+                relayWrapper
+                    .connect(user1Signer)
+                    .transferAndMulticall(
+                        [token.address, token.address],
+                        [amount1, amount2],
+                        [],
+                        user1Signer.address,
+                        user2Signer.address,
+                        "0xca11",
+                        "0x42"
+                    )
+            )
+                .to.emit(relayWrapper, "MulticallTransferSent")
+                .withArgs(user1Signer.address, "0x42");
+
+            expect(await token.balanceOf(treasurySigner.address)).to.equal(treasuryBefore);
+            expect(await token.balanceOf(relayApprovalProxyV3Mock.address)).to.equal(total);
+            expect(await token.allowance(relayWrapper.address, relayApprovalProxyV3Mock.address)).to.equal(0);
+        });
+
+        it("should revert if tokens and amounts length do not match", async () => {
+            await expect(
+                relayWrapper
+                    .connect(user1Signer)
+                    .transferAndMulticall([token.address], [], [], user1Signer.address, user2Signer.address, "0x", "0x")
+            ).to.be.revertedWithCustomError(relayWrapper, "Wrapper_LengthMismatch");
+        });
+
+        it("should forward proxy-level revert for zero refund address", async () => {
+            await expect(
+                relayWrapper
+                    .connect(user1Signer)
+                    .transferAndMulticall([], [], [], ethers.constants.AddressZero, user2Signer.address, "0x", "0x")
+            ).to.be.revertedWithCustomError(relayApprovalProxyV3Mock, "RefundToCannotBeZeroAddress");
+        });
+
+        it("should revert if paused", async () => {
+            await relayWrapper.connect(ownerSigner).pause();
+            await expect(
+                relayWrapper
+                    .connect(user1Signer)
+                    .transferAndMulticall([], [], [], user1Signer.address, user2Signer.address, "0x", "0x")
+            ).to.be.revertedWith("Pausable: paused");
         });
     });
 });
