@@ -405,13 +405,15 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param originSender The address of the origin sender. (controller in origin chain)
      */
     function receiveMessage(bytes calldata receivedMsg, uint256 originChain, address originSender) public override nonReentrant whenNotPaused {
-        // OriginSender must be a controller on another chain
-        if (getControllerForChain(originChain) != originSender) revert Controller_Invalid_Params();
+        address controllerForChain = getControllerForChain(originChain);
+        // Origin sender must match a configured controller on another chain.
+        if (controllerForChain == address(0) || controllerForChain != originSender) revert Controller_Invalid_Params();
 
         // Decode message
         Transfer memory transfer = abi.decode(receivedMsg, (Transfer));
 
         if (transfer.threshold == 1) {
+            if (mintingMaxLimitOf(msg.sender) == 0) revert Controller_AdapterNotSupported();
             // Instant transfer using the bridge limits
             // Check that transfer hasn't been replayed
             if (receivedTransfers[transfer.transferId].amount != 0) revert Controller_TransferNotExecutable();
