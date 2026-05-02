@@ -45,6 +45,11 @@ describe("AssetController Tests", () => {
     // ["resendTransfer(bytes32,address[],uint256[],bytes[])"]
 
     const replenishDuration = 43200; // 12 hours
+    const encodeTransfer = (recipient: string, amount: BigNumber, unwrap: boolean, threshold: number, id: string) =>
+        ethers.utils.defaultAbiCoder.encode(
+            ["tuple(address recipient,uint256 amount,bool unwrap,uint256 threshold,bytes32 transferId)"],
+            [{recipient, amount, unwrap, threshold, transferId: id}]
+        );
 
     beforeEach(async () => {
         [ownerSigner, user1Signer, treasury, pauser] = await ethers.getSigners();
@@ -989,6 +994,29 @@ describe("AssetController Tests", () => {
             const userBalanceAfter = await sourceToken.balanceOf(ownerSigner.address);
             expect(userBalanceBefore.sub(userBalanceAfter)).to.be.equal(amountToBridge.add(multiBridgeFeeAmount));
         });
+        it("should forward the full multi-bridge fee to treasury and not strand fees in the controller", async () => {
+            const feeAmount = await feeCollector.quote(amountToBridge);
+            const treasuryBalanceBefore = await sourceToken.balanceOf(treasuryAddress);
+            const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
+
+            await sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
+                ownerSigner.address,
+                amountToBridge,
+                false,
+                100,
+                [sourceBridgeAdapter.address, source2BridgeAdapter.address],
+                [relayerFee, relayerFee],
+                [bridgeOptions, bridgeOptions],
+                {
+                    value: relayerFee.mul(2),
+                }
+            );
+
+            const treasuryBalanceAfter = await sourceToken.balanceOf(treasuryAddress);
+            const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
+            expect(treasuryBalanceAfter.sub(treasuryBalanceBefore)).to.be.equal(feeAmount);
+            expect(controllerBalanceAfter).to.be.equal(controllerBalanceBefore);
+        });
         it("should revert if the adapters provided are less than minBridges", async () => {
             await expect(
                 sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
@@ -1337,6 +1365,37 @@ describe("AssetController Tests", () => {
             await destController.setControllerForChain([50], [ethers.constants.AddressZero]);
             await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_Invalid_Params");
         });
+        it("should revert if originChain is not configured", async () => {
+            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            await expect(destController.receiveMessage(forgedTransfer, 999, ethers.constants.AddressZero)).to.be.revertedWithCustomError(
+                destController,
+                "Controller_Invalid_Params"
+            );
+        });
+        it("should revert if a single-bridge caller is not approved", async () => {
+            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            await expect(
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+            ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
+
+            const receivedTransfer = await destController.receivedTransfers(transferId);
+            expect(receivedTransfer.amount).to.be.equal(0);
+            expect(receivedTransfer.receivedSoFar).to.be.equal(0);
+            expect(receivedTransfer.executed).to.be.equal(false);
+        });
+        it("should reject a poison attempt and still allow the legitimate single-bridge delivery", async () => {
+            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            await expect(
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+            ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
+
+            await connext.callXReceive(1);
+
+            const receivedTransfer = await destController.receivedTransfers(transferId);
+            expect(receivedTransfer.amount).to.be.equal(amountToBridge);
+            expect(receivedTransfer.receivedSoFar).to.be.equal(1);
+            expect(receivedTransfer.executed).to.be.equal(true);
+        });
         it("should revert if an executed transaction is resent", async () => {
             await connext.callXReceive(1);
             // resend transfer via another bridge
@@ -1465,6 +1524,17 @@ describe("AssetController Tests", () => {
         it("should revert if the multibridge adapter that delivered the message is not registered", async () => {
             await destController.setMultiBridgeAdapters([destBridgeAdapter.address], [false]);
             await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
+        });
+        it("should revert if a multi-bridge caller is not approved", async () => {
+            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 2, transferId);
+            await expect(
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+            ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
+
+            const receivedTransfer = await destController.receivedTransfers(transferId);
+            expect(receivedTransfer.amount).to.be.equal(0);
+            expect(receivedTransfer.receivedSoFar).to.be.equal(0);
+            expect(receivedTransfer.executed).to.be.equal(false);
         });
         it("should revert if the same adapter delivers the message twice", async () => {
             await connext.callXReceive(1);
