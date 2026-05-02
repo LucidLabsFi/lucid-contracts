@@ -51,30 +51,27 @@ describe("FeeCollector Tests", () => {
             const FeeCollector = await ethers.getContractFactory("FeeCollector");
             feeCollector = await FeeCollector.deploy(500, user1Signer.address, ownerSigner.address);
         });
-        it("should collect and redirect the fee to the treasury", async () => {
+        it("should collect and redirect the exact fee to the treasury", async () => {
             const amount = ethers.utils.parseEther("100");
             const quote = await feeCollector.quote(amount);
 
             const balanceBefore = await token.balanceOf(user1Signer.address);
             await token.approve(feeCollector.address, quote);
-            await feeCollector.collect(token.address, amount);
+            await feeCollector.collect(token.address, quote);
             const balanceAfter = await token.balanceOf(user1Signer.address);
             expect(balanceAfter.sub(balanceBefore)).to.be.equal(quote);
         });
-        it("should not transfer tokens if quote is zero", async () => {
-            // Set fee to 0
-            await feeCollector.setFeeBps(0);
-            const amount = ethers.utils.parseEther("100");
-
+        it("should not transfer tokens if amount is zero", async () => {
             const balanceBefore = await token.balanceOf(user1Signer.address);
-            await token.approve(feeCollector.address, amount);
-            await feeCollector.collect(token.address, amount);
+            await token.approve(feeCollector.address, 1);
+            await feeCollector.collect(token.address, 0);
             const balanceAfter = await token.balanceOf(user1Signer.address);
             expect(balanceAfter).to.be.equal(balanceBefore);
         });
-        it("should revert if the fee is not approved", async () => {
+        it("should revert if the exact fee is not approved", async () => {
             const amount = ethers.utils.parseEther("100");
-            await expect(feeCollector.collect(token.address, amount)).to.be.revertedWith("ERC20: insufficient allowance");
+            const quote = await feeCollector.quote(amount);
+            await expect(feeCollector.collect(token.address, quote)).to.be.revertedWith("ERC20: insufficient allowance");
         });
     });
     describe("setFeeBps", () => {

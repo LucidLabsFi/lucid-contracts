@@ -6,12 +6,14 @@ import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
 import {Ownable2StepInit, OwnableInit} from "../../../utils/access/Ownable2StepInit.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IRelayDepository} from "./interfaces/IRelayDepository.sol";
+import {IRelayApprovalProxyV3} from "./interfaces/IRelayApprovalProxyV3.sol";
 
 contract RelayWrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ===== Events =====
     event TransferSent(address indexed sender, address indexed inputToken, bytes32 indexed orderId, uint256 amountIn, bytes emittedMessage);
+    event MulticallTransferSent(address indexed sender, bytes emittedMessage);
     event FeeTaken(address indexed token, address indexed treasury, uint256 amount);
     event FeeRateSet(uint256 oldRate, uint256 newRate);
     event TreasurySet(address indexed oldTreasury, address indexed newTreasury);
@@ -20,6 +22,8 @@ contract RelayWrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     error Wrapper_InvalidFeeRate();
     error Wrapper_TreasuryZeroAddress();
     error Wrapper_RelayDepositoryZeroAddress();
+    error Wrapper_RelayApprovalProxyZeroAddress();
+    error Wrapper_LengthMismatch();
     error Wrapper_TransferFailed();
     error Wrapper_MsgValueNotZero();
     error Wrapper_FeeOnTransferToken();
@@ -30,22 +34,32 @@ contract RelayWrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     uint256 public constant MAX_FEE_RATE = 5_000; // 5.00%
 
     address public immutable RELAY_DEPOSITORY;
+    address public immutable RELAY_APPROVAL_PROXY;
     address payable public treasury;
 
     uint256 public feeRate; // 0..100_000
 
     /**
      * @param _relayDepository The Relay Depository address
+     * @param _relayApprovalProxyV3 The Relay Approval Proxy V3 address
      * @param _owner The owner address
      * @param _treasury The treasury address
      * @param _feeRate The fee rate
      */
-    constructor(address _relayDepository, address _owner, address payable _treasury, uint256 _feeRate) OwnableInit(_owner) {
+    constructor(
+        address _relayDepository,
+        address _relayApprovalProxyV3,
+        address _owner,
+        address payable _treasury,
+        uint256 _feeRate
+    ) OwnableInit(_owner) {
         if (_relayDepository == address(0)) revert Wrapper_RelayDepositoryZeroAddress();
+        if (_relayApprovalProxyV3 == address(0)) revert Wrapper_RelayApprovalProxyZeroAddress();
         if (_treasury == address(0) && _feeRate > 0) revert Wrapper_TreasuryZeroAddress();
         if (_feeRate > MAX_FEE_RATE) revert Wrapper_InvalidFeeRate();
 
         RELAY_DEPOSITORY = _relayDepository;
+        RELAY_APPROVAL_PROXY = _relayApprovalProxyV3;
         treasury = _treasury;
         feeRate = _feeRate;
         emit TreasurySet(address(0), _treasury);
@@ -162,7 +176,33 @@ contract RelayWrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice Quote the fee and net amount for a given gross amount
+     * @notice Transfer ERC20 tokens to Relay router and execute multicall through RelayApprovalProxyV3.
+     * @param tokens An array of token addresses to transfer
+     * @param amounts An array of token amounts to transfer
+     * @param calls The calls to perform
+     * @param refundTo The address to refund to
+     * @param nftRecipient The address of the NFT recipient
+     * @param metadata The message to emit and pass as metadata to RelayApprovalProxyV3
+     * @param emittedMessage The message to emit with the transfer
+     */
+    function transferAndMulticall(
+        address[] calldata tokens,
+        uint256[] calldata amounts,
+        IRelayApprovalProxyV3.Call3Value[] calldata calls,
+        address refundTo,
+        address nftRecipient,
+        bytes calldata metadata,
+        bytes calldata emittedMessage
+    ) external payable nonReentrant whenNotPaused returns (IRelayApprovalProxyV3.Result[] memory returnData) {
+        if (tokens.length != amounts.length) revert Wrapper_LengthMismatch();
+        _pullTokensAndIncreaseAllowances(tokens, amounts);
+        returnData = _callRelayApprovalProxy(tokens, amounts, calls, refundTo, nftRecipient, metadata);
+        _resetApprovals(tokens, RELAY_APPROVAL_PROXY);
+        emit MulticallTransferSent(msg.sender, emittedMessage);
+    }
+
+    /**
+     * @notice Quote the fee for transactions to RELAY_DEPOSITORY.
      * @param amount The gross amount
      * @return fee The fee amount
      * @return net The net amount after fee
@@ -177,6 +217,45 @@ contract RelayWrapper is Ownable2StepInit, ReentrancyGuard, Pausable {
         if (feeRate == 0 || gross == 0) return (0, gross);
         fee = (gross * feeRate) / RATE_DENOMINATOR;
         net = gross - fee;
+    }
+
+    function _pullTokensAndIncreaseAllowances(address[] calldata tokens, uint256[] calldata amounts) internal {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            IERC20 token = IERC20(tokens[i]);
+            uint256 amount = amounts[i];
+
+            // Pull exact token amount and reject fee-on-transfer tokens
+            uint256 balBefore = token.balanceOf(address(this));
+            token.safeTransferFrom(msg.sender, address(this), amount);
+            uint256 received = token.balanceOf(address(this)) - balBefore;
+            if (received != amount) revert Wrapper_FeeOnTransferToken();
+            uint256 currentAllowance = token.allowance(address(this), RELAY_APPROVAL_PROXY);
+            token.forceApprove(RELAY_APPROVAL_PROXY, currentAllowance + amount);
+        }
+    }
+
+    function _callRelayApprovalProxy(
+        address[] calldata tokens,
+        uint256[] calldata amounts,
+        IRelayApprovalProxyV3.Call3Value[] calldata calls,
+        address refundTo,
+        address nftRecipient,
+        bytes calldata emittedMessage
+    ) internal returns (IRelayApprovalProxyV3.Result[] memory returnData) {
+        returnData = IRelayApprovalProxyV3(RELAY_APPROVAL_PROXY).transferAndMulticall{value: msg.value}(
+            tokens,
+            amounts,
+            calls,
+            refundTo,
+            nftRecipient,
+            emittedMessage
+        );
+    }
+
+    function _resetApprovals(address[] calldata tokens, address spender) internal {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            IERC20(tokens[i]).forceApprove(spender, 0);
+        }
     }
 
     receive() external payable {}
