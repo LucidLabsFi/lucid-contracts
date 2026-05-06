@@ -33,6 +33,8 @@ describe("LockReleaseAssetController Tests", () => {
     const relayerFeeThreshold = ethers.utils.parseEther("0.0001");
     const minBridges = 2;
     const bridgeGasLimit = 2000000;
+    const sourceChainId = 31337;
+    const destinationChainId = sourceChainId;
 
     const replenishDuration = 43200; // 12 hours
     beforeEach(async () => {
@@ -40,7 +42,7 @@ describe("LockReleaseAssetController Tests", () => {
         [ownerSigner, user1Signer, treasury, pauser, yieldManager] = await ethers.getSigners();
         treasuryAddress = treasury.address;
 
-        // Chain 50 - sourceController, BridgeAdapter
+        // Chain 31337 - sourceController, BridgeAdapter
         // Chain 100 - destController, BridgeAdapter
 
         YieldStrategy = await ethers.getContractFactory("AaveYieldStrategy");
@@ -112,7 +114,7 @@ describe("LockReleaseAssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [100],
+            [destinationChainId],
             [1000],
             ownerSigner.address
         );
@@ -124,18 +126,18 @@ describe("LockReleaseAssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [50],
+            [sourceChainId],
             [500],
             ownerSigner.address
         );
 
         // After bridge addapters' address is known, set it in the other adapter contract
-        await sourceBridgeAdapter.setTrustedAdapter(100, destBridgeAdapter.address);
-        await destBridgeAdapter.setTrustedAdapter(50, sourceBridgeAdapter.address);
+        await sourceBridgeAdapter.setTrustedAdapter(destinationChainId, destBridgeAdapter.address);
+        await destBridgeAdapter.setTrustedAdapter(sourceChainId, sourceBridgeAdapter.address);
 
         // Call setControllerForChain on Source and Dest Controller to register other Controller contracts
-        await sourceController.setControllerForChain([100], [destController.address]);
-        await destController.setControllerForChain([50], [sourceController.address]);
+        await sourceController.setControllerForChain([destinationChainId], [destController.address]);
+        await destController.setControllerForChain([sourceChainId], [sourceController.address]);
 
         // Set bridge limits
         await sourceController.setLimits(sourceBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
@@ -146,10 +148,10 @@ describe("LockReleaseAssetController Tests", () => {
         await destController.setLimits(ethers.constants.AddressZero, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
 
         // Set domain Id for adapter contract, applycable to Connext adapters
-        await sourceBridgeAdapter.setDomainId([50], [500]);
-        await destBridgeAdapter.setDomainId([100], [1000]);
-        await sourceBridgeAdapter.setDomainId([100], [1000]);
-        await destBridgeAdapter.setDomainId([50], [500]);
+        await sourceBridgeAdapter.setDomainId([sourceChainId], [500]);
+        await destBridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await sourceBridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await destBridgeAdapter.setDomainId([sourceChainId], [500]);
 
         // set origin domain id in Mock Connext contract
         await connext.setOriginDomainId(sourceBridgeAdapter.address, 500); // domain id of the same chain of source adapter
@@ -458,7 +460,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -476,7 +478,7 @@ describe("LockReleaseAssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -497,7 +499,7 @@ describe("LockReleaseAssetController Tests", () => {
                         user1Signer.address,
                         amountToBridge,
                         false,
-                        100,
+                        destinationChainId,
                         sourceBridgeAdapter.address,
                         bridgeOptions,
                         {
@@ -524,7 +526,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address],
                 [relayerFee],
                 [bridgeOptions],
@@ -550,7 +552,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -567,7 +569,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -593,7 +595,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -619,7 +621,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -634,7 +636,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -652,7 +654,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge.mul(2),
                 true,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -671,7 +673,7 @@ describe("LockReleaseAssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge.add(additionalTokens),
                 true,
-                50,
+                sourceChainId,
                 destBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -1177,7 +1179,7 @@ describe("LockReleaseAssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    50,
+                    sourceChainId,
                     destBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -1208,7 +1210,7 @@ describe("LockReleaseAssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    50,
+                    sourceChainId,
                     destBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -1242,7 +1244,7 @@ describe("LockReleaseAssetController Tests", () => {
                     user1Signer.address,
                     largeAmount,
                     false,
-                    50,
+                    sourceChainId,
                     destBridgeAdapter.address,
                     bridgeOptions,
                     {

@@ -12,6 +12,9 @@ import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeE
 /**
  * @title AssetController
  * @notice This contract is responsible for managing the minting and burning of a specified token across different chains, using a single or multiple bridge adapters.
+ * @dev Unwrapping assumptions:
+ * - The configured lockbox must not be native (IS_NATIVE() == false).
+ * - Fee-on-transfer underlying tokens are not supported for unwrapping flows.
  */
 contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IController {
     using SafeERC20 for IERC20;
@@ -118,9 +121,14 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @notice Error thrown when the burn function call on the token fails
     error Controller_TokenBurnFailed();
 
+    /// @notice Error thrown when the transferId does not match the transfer payload
+    error Controller_InvalidTransferId();
+
     /// @notice Struct representing a bridged asset.
     /// @dev This struct holds the details of a message to be relayed to another chain.
     struct Transfer {
+        uint256 nonce;
+        uint256 destChainId;
         address recipient;
         uint256 amount;
         bool unwrap;
@@ -265,13 +273,10 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         if (recipient == address(0)) revert Controller_Invalid_Params();
         if (getControllerForChain(destChainId) == address(0)) revert Controller_Chain_Not_Supported();
         if (transfersPausedTo[destChainId]) revert Controller_TransfersPausedToDestination();
-        bytes32 transferId = calculateTransferId(destChainId);
-        // Increment nonce used to create transfer id
-        nonce++;
-
+        Transfer memory transfer = _createTransfer(destChainId, recipient, amount, unwrap, 1);
+        bytes32 transferId = transfer.transferId;
         // Store transfer data
         destChainForMessage[transferId] = destChainId;
-        Transfer memory transfer = Transfer(recipient, amount, unwrap, 1, transferId);
         relayedTransfers[transferId] = transfer;
 
         IBaseAdapter(bridgeAdapter).relayMessage{value: msg.value}(
@@ -353,11 +358,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
         if (getControllerForChain(destChainId) == address(0)) revert Controller_Chain_Not_Supported();
         if (transfersPausedTo[destChainId]) revert Controller_TransfersPausedToDestination();
-        // Create transfer id
-        bytes32 transferId = calculateTransferId(destChainId);
-        // Increment nonce used to create transfer id
-        nonce++;
-        Transfer memory transfer = Transfer(recipient, amount, unwrap, minBridges, transferId);
+        Transfer memory transfer = _createTransfer(destChainId, recipient, amount, unwrap, minBridges);
+        bytes32 transferId = transfer.transferId;
 
         // Store transfer data
         destChainForMessage[transferId] = destChainId;
@@ -411,6 +413,19 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
         // Decode message
         Transfer memory transfer = abi.decode(receivedMsg, (Transfer));
+        if (transfer.destChainId != block.chainid) revert Controller_InvalidTransferId();
+        if (
+            transfer.transferId !=
+            _calculateTransferId(
+                originChain,
+                transfer.destChainId,
+                transfer.nonce,
+                transfer.recipient,
+                transfer.amount,
+                transfer.unwrap,
+                transfer.threshold
+            )
+        ) revert Controller_InvalidTransferId();
 
         if (transfer.threshold == 1) {
             if (mintingMaxLimitOf(msg.sender) == 0) revert Controller_AdapterNotSupported();
@@ -439,15 +454,17 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             }
             emit TransferExecuted(transfer.transferId);
         } else {
+            if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
+            if (transfer.threshold < minBridges) revert Controller_Invalid_Params();
             // Msg.sender needs to be a multibridge adapter
             if (!multiBridgeAdapters[msg.sender]) revert Controller_AdapterNotSupported();
             if (deliveredBy[transfer.transferId][msg.sender] == true) revert Controller_TransferResentByAadapter();
             deliveredBy[transfer.transferId][msg.sender] = true;
 
-            ReceivedTransfer memory receivedTransfer = receivedTransfers[transfer.transferId];
+            ReceivedTransfer storage receivedTransfer = receivedTransfers[transfer.transferId];
             // Multi-bridge transfer
             if (receivedTransfer.receivedSoFar == 0) {
-                receivedTransfer = ReceivedTransfer({
+                receivedTransfers[transfer.transferId] = ReceivedTransfer({
                     recipient: transfer.recipient,
                     amount: transfer.amount,
                     unwrap: transfer.unwrap,
@@ -457,13 +474,20 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
                     executed: false
                 });
             } else {
+                // Invariant check
+                if (
+                    receivedTransfer.recipient != transfer.recipient ||
+                    receivedTransfer.amount != transfer.amount ||
+                    receivedTransfer.unwrap != transfer.unwrap ||
+                    receivedTransfer.threshold != transfer.threshold ||
+                    receivedTransfer.originChainId != originChain
+                ) revert Controller_InvalidTransferId();
                 receivedTransfer.receivedSoFar++;
             }
             // Check if the transfer can be executed
             if (receivedTransfer.receivedSoFar >= receivedTransfer.threshold) {
                 emit TransferExecutable(transfer.transferId);
             }
-            receivedTransfers[transfer.transferId] = receivedTransfer;
         }
         emit TransferReceived(transfer.transferId, originChain, msg.sender);
     }
@@ -476,6 +500,10 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         ReceivedTransfer storage transfer = receivedTransfers[transferId];
         if (transfer.amount == 0) revert Controller_UnknownTransfer();
         if (transfer.executed) revert Controller_TransferNotExecutable();
+        if (transfer.threshold > 1) {
+            if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
+            if (transfer.threshold < minBridges) revert Controller_Invalid_Params();
+        }
         if (transfer.receivedSoFar < transfer.threshold) revert Controller_ThresholdNotMet();
         uint256 _currentLimit = mintingCurrentLimitOf(address(0));
         if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
@@ -507,13 +535,33 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param destChainId The destination chain ID.
      * @return The calculated transfer ID.
      */
-    function calculateTransferId(uint256 destChainId) public view returns (bytes32) {
-        return keccak256(abi.encode(destChainId, block.chainid, nonce));
+    function calculateTransferId(
+        uint256 destChainId,
+        uint256 transferNonce,
+        address recipient,
+        uint256 amount,
+        bool unwrap,
+        uint256 threshold
+    ) public view returns (bytes32) {
+        return _calculateTransferId(block.chainid, destChainId, transferNonce, recipient, amount, unwrap, threshold);
     }
 
     /* ========== ADMIN ========== */
 
     function setTokenUnwrapping(bool _allowUnwrapping) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_allowUnwrapping) {
+            // Enforce non-native lockboxes when unwrapping is enabled.
+            (bool lockboxSuccess, bytes memory lockboxData) = token.call(abi.encodeWithSignature("lockbox()"));
+            if (!lockboxSuccess || lockboxData.length == 0) revert Controller_Invalid_Params();
+
+            address lockbox = abi.decode(lockboxData, (address));
+            if (lockbox == address(0)) revert Controller_Invalid_Params();
+
+            (bool isNativeSuccess, bytes memory isNativeData) = lockbox.call(abi.encodeWithSignature("IS_NATIVE()"));
+            bool isNative = isNativeSuccess && isNativeData.length != 0 ? abi.decode(isNativeData, (bool)) : false;
+            if (isNative) revert Controller_Invalid_Params();
+        }
+
         allowTokenUnwrapping = _allowUnwrapping;
         emit AllowTokenUnwrappingSet(_allowUnwrapping);
     }
@@ -593,16 +641,21 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param amount The amount of the asset to burn.
      */
     function _burn(address account, uint256 amount) internal virtual {
-        uint256 balance = IERC20(token).balanceOf(account);
+        IERC20 tokenContract = IERC20(token);
+        uint256 balance = tokenContract.balanceOf(account);
         bool success;
         if (BURN_SELECTOR == BURN_SELECTOR_SINGLE) {
             // burn(uint256) implementations expect msg.sender to hold the tokens
-            IERC20(token).safeTransferFrom(account, address(this), amount);
+            tokenContract.safeTransferFrom(account, address(this), amount);
+            uint256 contractBalance = tokenContract.balanceOf(address(this));
             (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, amount));
+            uint256 newContractBalance = tokenContract.balanceOf(address(this));
+
+            if ((newContractBalance != contractBalance - amount)) revert Controller_TokenBurnFailed();
         } else {
             (success, ) = token.call(abi.encodeWithSelector(BURN_SELECTOR, account, amount));
         }
-        uint256 newBalance = IERC20(token).balanceOf(account);
+        uint256 newBalance = tokenContract.balanceOf(account);
         if (!success || (newBalance != balance - amount)) revert Controller_TokenBurnFailed();
     }
 
@@ -646,6 +699,31 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             _controllerForChain[chainId[i]] = controller[i];
             emit ControllerForChainSet(controller[i], chainId[i]);
         }
+    }
+
+    function _createTransfer(
+        uint256 destChainId,
+        address recipient,
+        uint256 amount,
+        bool unwrap,
+        uint256 threshold
+    ) internal returns (Transfer memory transfer) {
+        uint256 transferNonce = nonce;
+        bytes32 transferId = calculateTransferId(destChainId, transferNonce, recipient, amount, unwrap, threshold);
+        nonce++;
+        transfer = Transfer(transferNonce, destChainId, recipient, amount, unwrap, threshold, transferId);
+    }
+
+    function _calculateTransferId(
+        uint256 sourceChainId,
+        uint256 destChainId,
+        uint256 transferNonce,
+        address recipient,
+        uint256 amount,
+        bool unwrap,
+        uint256 threshold
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(sourceChainId, destChainId, transferNonce, recipient, amount, unwrap, threshold));
     }
 
     /**

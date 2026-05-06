@@ -2,15 +2,6 @@ import * as dotenv from "dotenv";
 
 import {HardhatUserConfig} from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-
-// import "@nomicfoundation/hardhat-chai-matchers";
-// import "@nomiclabs/hardhat-ethers";
-// import "@typechain/hardhat";
-// import "hardhat-gas-reporter";
-// import "solidity-coverage";
-
-// import "@nomicfoundation/hardhat-verify";
-
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-contract-sizer";
 import "hardhat-change-network";
@@ -128,13 +119,13 @@ const config = {
         },
         sepolia: {
             url: process.env.SEPOLIA_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             timeout: 0,
             //gasPrice: 25000000000,
         },
         polygonAmoy: {
             url: process.env.AMOY_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 80002,
             //@ts-ignore
             // gasLimit: 20_000_000,
@@ -143,25 +134,25 @@ const config = {
         },
         polygonZKtestnet: {
             url: process.env.POLYGONZK_TESTNET_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             timeout: 0,
             chainId: 1442,
         },
         arbitrumGoerli: {
             url: process.env.ARBITRUM_GOERLI_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             // gasPrice: 1600000000,
             // gasLimit: 20000000,
         },
         arbitrumSepolia: {
             url: process.env.ARBITRUM_SEPOLIA_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             // gasPrice: 1600000000,
             // gasLimit: 20000000,
         },
         optimismSepolia: {
             url: process.env.OPTIMISM_SEPOLIA_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 11155420,
             // gasPrice: 500000000,
             // gasLimit: 20000000,
@@ -173,18 +164,18 @@ const config = {
         },
         lineaSepolia: {
             url: process.env.LINEA_SEPOLIA_URL || "",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 59141,
         },
         opDevnet0: {
             url: "https://interop-alpha-0.optimism.io",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 420120000,
             gasPrice: 100000,
         },
         opDevnet1: {
             url: "https://interop-alpha-1.optimism.io",
-            accounts: {mnemonic: process.env.MNEMONIC},
+            accounts: accounts,
             chainId: 420120001,
             gasPrice: 100000,
         },
@@ -273,7 +264,7 @@ const config = {
             timeout: 0,
         },
         unichain: {
-            url: process.env.UNICHAIN_MAINNET_URL,
+            url: "https://mainnet.unichain.org",
             accounts: accounts,
             chainId: 130,
             timeout: 0,
@@ -348,14 +339,36 @@ const config = {
             chainId: 98866,
             timeout: 0,
         },
-
-        xoTestnet: {
-            url: "https://testnet-rpc-1.xo.market",
+        bob: {
+            url: "https://rpc.gobob.xyz/",
             accounts: accounts,
-            chainId: 1000101,
+            chainId: 60808,
             timeout: 0,
-            gasPrice: 200,
-            gasLimit: 7000000000,
+        },
+        mantra: {
+            url: "https://evm.mantrachain.io",
+            accounts: accounts,
+            chainId: 5888,
+            timeout: 0,
+        },
+        avalanche: {
+            url: process.env.AVALANCHE_MAINNET_URL || "",
+            accounts: accounts,
+            chainId: 43114,
+            timeout: 0,
+            gasMultiplier: 2,
+        },
+        kiteai: {
+            url: "https://rpc-ireland.gokite.ai/",
+            accounts: accounts,
+            chainId: 2366,
+            timeout: 0,
+        },
+        celo: {
+            url: "https://forno.celo.org",
+            accounts: accounts,
+            chainId: 42220,
+            timeout: 0,
         },
     },
     etherscan: {
@@ -383,12 +396,16 @@ const config = {
             saakuru: "empty",
             bsquared: "empty", // No API key for B-Squared
             plume: "empty", // No API key for Plume
-            xoTestnet: "empty", // No API key for XO Testnet
+            bob: "empty", // No API key for Bob
+            mantra: "empty", // No API key for Mantra
             gnosis: process.env.ETHERSCAN_API_KEY,
             bnb: process.env.ETHERSCAN_API_KEY,
             berachain: process.env.ETHERSCAN_API_KEY || "",
             sonic: process.env.ETHERSCAN_API_KEY || "",
             mantle: process.env.ETHERSCAN_API_KEY || "",
+            avalanche: "empty", // No API key for Avalanche
+            kiteai: "empty", // No API key for KiteAI
+            celo: process.env.ETHERSCAN_API_KEY || "",
         },
         customChains: [
             {
@@ -547,8 +564,8 @@ const config = {
                 network: "bsquared",
                 chainId: 223,
                 urls: {
-                    apiURL: "https://mainnet-backend.bsquared.network/api",
-                    browserURL: "https://mainnet-blockscout.bsquared.network/",
+                    apiURL: "https://12d6a1773a-backend-blockscout.bsquared.network/api/api",
+                    browserURL: "https://12d6a1773a-frontent-blockscout.bsquared.network",
                 },
             },
             {
@@ -560,11 +577,43 @@ const config = {
                 },
             },
             {
-                network: "xoTestnet",
-                chainId: 1000101,
+                network: "bob",
+                chainId: 60808,
                 urls: {
-                    apiURL: "https://explorer-testnet.xo.market/api",
-                    browserURL: "hhttps://explorer-testnet.xo.market/",
+                    apiURL: "https://explorer.gobob.xyz/api",
+                    browserURL: "https://explorer.gobob.xyz/",
+                },
+            },
+            {
+                network: "mantra",
+                chainId: 5888,
+                urls: {
+                    apiURL: "https://blockscout.mantrascan.io/api",
+                    browserURL: "https://blockscout.mantrascan.io",
+                },
+            },
+            {
+                network: "avalanche",
+                chainId: 43114,
+                urls: {
+                    apiURL: "https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan",
+                    browserURL: "https://snowtrace.io/",
+                },
+            },
+            {
+                network: "kiteai",
+                chainId: 2366,
+                urls: {
+                    apiURL: "https://www.kitescan.ai/api",
+                    browserURL: "https://www.kitescan.ai",
+                },
+            },
+            {
+                network: "celo",
+                chainId: 42220,
+                urls: {
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=42220",
+                    browserURL: "https://celoscan.io/",
                 },
             },
             // {
@@ -603,7 +652,7 @@ const config = {
                 network: "polygonAmoy",
                 chainId: 80002,
                 urls: {
-                    apiURL: "https://api-amoy.polygonscan.com/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=80002",
                     browserURL: "https://amoy.polygonscan.com/",
                 },
             },
@@ -619,7 +668,7 @@ const config = {
                 network: "lineaSepolia",
                 chainId: 59141,
                 urls: {
-                    apiURL: "https://api-sepolia.lineascan.build/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=59141",
                     browserURL: "https://sepolia.lineascan.build",
                 },
             },
@@ -627,7 +676,7 @@ const config = {
                 network: "optimismSepolia",
                 chainId: 11155420,
                 urls: {
-                    apiURL: "https://api-sepolia-optimistic.etherscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=11155420",
                     browserURL: "https://sepolia-optimistic.etherscan.io",
                 },
             },
@@ -635,7 +684,7 @@ const config = {
                 network: "arbitrumSepolia",
                 chainId: 421614,
                 urls: {
-                    apiURL: "https://api-sepolia.arbiscan.io/api",
+                    apiURL: "https://api.etherscan.io/v2/api?chainid=421614",
                     browserURL: "https://sepolia.arbiscan.io/",
                 },
             },

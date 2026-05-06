@@ -434,6 +434,8 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
                 if (i > 0 && thresholds[i] == 0) revert Wrapper_InvalidParams();
                 // Ensure thresholds are in strictly ascending order
                 if (i > 0 && thresholds[i] <= thresholds[i - 1]) revert Wrapper_InvalidParams();
+                // Ensure that if there's a fee, treasury must be set
+                if (bips[i] > 0 && treasury == address(0)) revert Wrapper_TreasuryZeroAddress();
 
                 config.tiers[i] = FeeTier(thresholds[i], bips[i]);
             }

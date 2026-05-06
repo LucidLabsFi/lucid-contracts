@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import {AssetController} from "../AssetController.sol";
+import {IBaseAdapter} from "../adapters/interfaces/IBaseAdapter.sol";
 
 contract AssetControllerMock is AssetController {
     constructor(
@@ -20,5 +21,9 @@ contract AssetControllerMock is AssetController {
 
     function updateToken(address _token) public {
         token = _token;
+    }
+
+    function relayArbitraryMessage(address bridgeAdapter, uint256 destChainId, bytes memory options, bytes memory message) public payable {
+        IBaseAdapter(bridgeAdapter).relayMessage{value: msg.value}(destChainId, getControllerForChain(destChainId), options, message);
     }
 }

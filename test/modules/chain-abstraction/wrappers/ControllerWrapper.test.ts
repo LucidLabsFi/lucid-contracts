@@ -437,6 +437,24 @@ describe("ControllerWrapper Tests", () => {
             ).to.be.revertedWithCustomError(controllerWrapper, "Wrapper_InvalidParams");
         });
 
+        it("should revert if treasury is zero and any tier fee is non-zero", async () => {
+            const ControllerWrapperFactory = await ethers.getContractFactory("ControllerWrapper");
+            const wrapperWithZeroTreasury = await ControllerWrapperFactory.deploy(
+                [ownerSigner.address, user1Signer.address],
+                ethers.constants.AddressZero,
+                0,
+                [controller.address],
+                [],
+                []
+            );
+
+            await expect(
+                wrapperWithZeroTreasury
+                    .connect(ownerSigner)
+                    .setControllerFeeTiers(controller.address, [destChainId], [ethers.utils.parseEther("100")], [200])
+            ).to.be.revertedWithCustomError(wrapperWithZeroTreasury, "Wrapper_TreasuryZeroAddress");
+        });
+
         it("should allow threshold zero for first tier", async () => {
             await controllerWrapper
                 .connect(ownerSigner)
