@@ -73,7 +73,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         // Deploy AssetController contract
         const CircleLockReleaseAssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
         sourceController = await CircleLockReleaseAssetController.deploy(
-            [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -88,7 +88,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         const AssetController = await ethers.getContractFactory("AssetController");
 
         destController = await AssetController.deploy(
-            [destToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [destToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -167,24 +167,8 @@ describe("CircleLockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     36000,
-                    2,
-                    [],
-                    [],
-                    [],
-                    [],
-                    [],
-                    ethers.constants.AddressZero
-                )
-            ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
-        });
-        it("should revert if the fee adapter is zero", async () => {
-            const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
-            await expect(
-                AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero, ethers.constants.AddressZero],
-                    3600,
                     2,
                     [],
                     [],
@@ -198,7 +182,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should set multibridge adapters", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [sourceBridgeAdapter.address],
@@ -213,7 +197,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should set the controller for chains", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -230,7 +214,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should set the mint and burn selectors", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -247,7 +231,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -263,7 +247,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -279,7 +263,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -295,7 +279,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -310,7 +294,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should set limits for bridges", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -327,7 +311,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should give the PAUSE_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -343,7 +327,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should give the PAUSE_ROLE to pauser", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -359,7 +343,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
         it("should give the DEFAULT_ADMIN_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("CircleLockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -373,17 +357,15 @@ describe("CircleLockReleaseAssetController Tests", () => {
             expect(await controller.hasRole(await destController.DEFAULT_ADMIN_ROLE(), ownerSigner.address)).to.equal(false);
         });
     });
-    describe("transferTo - multi bridge fee collection", () => {
+    describe("transferTo - multi bridge", () => {
         beforeEach(async () => {
             relayerFee = ethers.utils.parseEther("0.001");
             amountToBridge = ethers.utils.parseEther("100");
             await sourceController.setMinBridges(1);
             await sourceToken.mint(ownerSigner.address, amountToBridge);
-            const feeAmount = await feeCollector.quote(amountToBridge);
-            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge.add(feeAmount));
+            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge);
         });
-        it("should forward the full fee to treasury and only lock the bridged amount", async () => {
-            const feeAmount = await feeCollector.quote(amountToBridge);
+        it("should not transfer tokens to treasury and should only lock the bridged amount", async () => {
             const treasuryBalanceBefore = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
 
@@ -402,7 +384,7 @@ describe("CircleLockReleaseAssetController Tests", () => {
 
             const treasuryBalanceAfter = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
-            expect(treasuryBalanceAfter.sub(treasuryBalanceBefore)).to.be.equal(feeAmount);
+            expect(treasuryBalanceAfter).to.be.equal(treasuryBalanceBefore);
             expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.be.equal(amountToBridge);
         });
     });

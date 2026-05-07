@@ -75,7 +75,7 @@ describe("LockReleaseAssetController Tests", () => {
         // Deploy AssetController contract
         const LockReleaseAssetController = await ethers.getContractFactory("LockReleaseAssetController");
         sourceController = await LockReleaseAssetController.deploy(
-            [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -91,7 +91,7 @@ describe("LockReleaseAssetController Tests", () => {
         const AssetController = await ethers.getContractFactory("AssetController");
 
         destController = await AssetController.deploy(
-            [destToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [destToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -168,25 +168,8 @@ describe("LockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     36000,
-                    2,
-                    [],
-                    [],
-                    [],
-                    [],
-                    [],
-                    ["0x00000000", "0x00000000"],
-                    ethers.constants.AddressZero
-                )
-            ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
-        });
-        it("should revert if the fee adapter is zero", async () => {
-            const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
-            await expect(
-                AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero, ethers.constants.AddressZero],
-                    3600,
                     2,
                     [],
                     [],
@@ -201,7 +184,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should set multibridge adapters", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [sourceBridgeAdapter.address],
@@ -217,7 +200,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should set the controller for chains", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -235,7 +218,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should set the mint and burn selectors", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -253,7 +236,7 @@ describe("LockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -270,7 +253,7 @@ describe("LockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -287,7 +270,7 @@ describe("LockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -304,7 +287,7 @@ describe("LockReleaseAssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -320,7 +303,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should set limits for bridges", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -338,7 +321,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should give the PAUSE_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -355,7 +338,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should give the PAUSE_ROLE to pauser", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -372,7 +355,7 @@ describe("LockReleaseAssetController Tests", () => {
         it("should give the DEFAULT_ADMIN_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -403,7 +386,7 @@ describe("LockReleaseAssetController Tests", () => {
             it("should set the yield strategy contract address", async () => {
                 const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
                 const controller = await AssetController.deploy(
-                    [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                     3600,
                     2,
                     [],
@@ -431,7 +414,7 @@ describe("LockReleaseAssetController Tests", () => {
                 const AssetController = await ethers.getContractFactory("LockReleaseAssetController");
                 await expect(
                     AssetController.deploy(
-                        [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                        [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                         3600,
                         2,
                         [],
@@ -509,16 +492,14 @@ describe("LockReleaseAssetController Tests", () => {
             ).to.be.revertedWith("ERC20: insufficient allowance");
         });
     });
-    describe("transferTo - multi bridge fee collection", () => {
+    describe("transferTo - multi bridge", () => {
         beforeEach(async () => {
             relayerFee = ethers.utils.parseEther("0.001");
             amountToBridge = ethers.utils.parseEther("100");
             await sourceController.setMinBridges(1);
-            const feeAmount = await feeCollector.quote(amountToBridge);
-            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge.add(feeAmount));
+            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge);
         });
-        it("should forward the full fee to treasury and only lock the bridged amount", async () => {
-            const feeAmount = await feeCollector.quote(amountToBridge);
+        it("should not transfer tokens to treasury and should only lock the bridged amount", async () => {
             const treasuryBalanceBefore = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
 
@@ -537,7 +518,7 @@ describe("LockReleaseAssetController Tests", () => {
 
             const treasuryBalanceAfter = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
-            expect(treasuryBalanceAfter.sub(treasuryBalanceBefore)).to.be.equal(feeAmount);
+            expect(treasuryBalanceAfter).to.be.equal(treasuryBalanceBefore);
             expect(controllerBalanceAfter.sub(controllerBalanceBefore)).to.be.equal(amountToBridge);
         });
     });

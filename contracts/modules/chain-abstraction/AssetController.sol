@@ -6,7 +6,6 @@ import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 import {BaseAssetBridge} from "./BaseAssetBridge.sol";
 import {IBaseAdapter} from "./adapters/interfaces/IBaseAdapter.sol";
 import {IController} from "./interfaces/IController.sol";
-import {IFeeCollector} from "./interfaces/IFeeCollector.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
@@ -74,6 +73,15 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @param enabled The status of the adapter.
     event MultiBridgeAdapterSet(address indexed adapter, bool enabled);
 
+    /// @notice Event emitted when a transfer sender is whitelisted or removed.
+    /// @param sender The sender address.
+    /// @param enabled The whitelist status.
+    event TransferSenderSet(address indexed sender, bool enabled);
+
+    /// @notice Event emitted when transfer sender whitelist enforcement is toggled.
+    /// @param enabled Whether the whitelist is enforced.
+    event TransferSenderWhitelistSet(bool enabled);
+
     /// @notice Event emitted when the controller address for a chain is set.
     /// @param controller The address of the controller.
     /// @param chainId The chain ID.
@@ -115,6 +123,9 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @notice Error thrown when transfers to the destination chain are paused
     error Controller_TransfersPausedToDestination();
 
+    /// @notice Error thrown when the caller is not allowed to initiate transfers
+    error Controller_SenderNotWhitelisted();
+
     /// @notice Error thrown when the mint function call on the token fails
     error Controller_TokenMintFailed();
 
@@ -148,9 +159,6 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         bool executed;
     }
 
-    /// @dev The fee collector contract address.
-    IFeeCollector public immutable feeCollector;
-
     /// @dev The local token address that is being bridged.
     address public token;
 
@@ -178,6 +186,12 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @dev Mapping of whitelisted bridge adapters that can be used for multi-bridge transfers. Used for both sending and receiving messages.
     mapping(address => bool) public multiBridgeAdapters;
 
+    /// @dev Mapping of addresses that are allowed to initiate bridge transfers through transferTo().
+    mapping(address => bool) public transferSenders;
+
+    /// @dev Whether transfer sender whitelist enforcement is enabled for transferTo().
+    bool public transferSenderWhitelistEnabled;
+
     /// @dev Indicates whether transfers to a given chain ID are currently paused
     mapping(uint256 => bool) public transfersPausedTo;
 
@@ -199,7 +213,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @notice Initializes the contract with the given parameters.
      * @notice To configure multibridge limits, use the zero address as a bridge in `_bridges` and set the limits accordingly.
      * @param _addresses An array with four elements, containing the token address, the user that gets DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the user getting only PAUSE_ROLE,
-     *          the fee collector contract, the controller address in other chains for the given chain IDs (if deployed with create3).
+     *          and the controller address in other chains for the given chain IDs (if deployed with create3).
      * @param _duration The duration it takes for the limits to fully replenish.
      * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Setting to 0 will disable multi-bridge transfers.
      * @param _multiBridgeAdapters The addresses of the initial bridge adapters that can be used for multi-bridge transfers, bypassing the limits.
@@ -210,7 +224,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param _selectors Bytes4 array of mint and burn function selectors.
      */
     constructor(
-        address[5] memory _addresses, //token, initialOwner, pauser, feeCollector, controllerAddress
+        address[4] memory _addresses, //token, initialOwner, pauser, controllerAddress
         uint256 _duration,
         uint256 _minBridges,
         address[] memory _multiBridgeAdapters,
@@ -220,9 +234,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         uint256[] memory _burningLimits,
         bytes4[2] memory _selectors
     ) BaseAssetBridge(_addresses[1], _addresses[2], _duration, _bridges, _mintingLimits, _burningLimits) {
-        if ((_addresses[0] == address(0)) || (_addresses[3] == address(0))) revert Controller_Invalid_Params();
+        if (_addresses[0] == address(0)) revert Controller_Invalid_Params();
         token = _addresses[0];
-        feeCollector = IFeeCollector(_addresses[3]);
         minBridges = _minBridges;
         emit MinBridgesSet(_minBridges);
         if (_multiBridgeAdapters.length > 0) {
@@ -232,14 +245,17 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             }
         }
 
-        if (_addresses[4] != address(0)) {
+        if (_addresses[3] != address(0)) {
             for (uint256 i = 0; i < _chainId.length; i++) {
-                _controllerForChain[_chainId[i]] = _addresses[4];
-                emit ControllerForChainSet(_addresses[4], _chainId[i]);
+                _controllerForChain[_chainId[i]] = _addresses[3];
+                emit ControllerForChainSet(_addresses[3], _chainId[i]);
             }
         }
         allowTokenUnwrapping = false;
         emit AllowTokenUnwrappingSet(false);
+
+        transferSenderWhitelistEnabled = false;
+        emit TransferSenderWhitelistSet(false);
 
         MINT_SELECTOR = _selectors[0];
         BURN_SELECTOR = _selectors[1];
@@ -265,6 +281,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         address bridgeAdapter,
         bytes memory bridgeOptions
     ) public payable nonReentrant whenNotPaused {
+        if (transferSenderWhitelistEnabled && !transferSenders[_msgSender()]) revert Controller_SenderNotWhitelisted();
         if (amount == 0) revert Controller_ZeroAmount();
         if (burningCurrentLimitOf(bridgeAdapter) < amount) revert Controller_NotHighEnoughLimits();
         _useBurnerLimits(bridgeAdapter, amount);
@@ -302,8 +319,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         if (destChainId == 0) revert Controller_UnknownTransfer();
         Transfer memory transfer = relayedTransfers[transferId];
         if (transfer.threshold == 1) {
-            uint256 _currentLimit = burningCurrentLimitOf(adapter);
-            if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
+            if (burningMaxLimitOf(adapter) == 0) revert Controller_AdapterNotSupported();
             // Resend doesn't consume burn limits, since the asset is already burned, but it checks if the bridge adapter is enabled
 
             IBaseAdapter(adapter).relayMessage{value: msg.value}(destChainId, getControllerForChain(destChainId), options, abi.encode(transfer));
@@ -336,14 +352,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         uint256[] memory fees,
         bytes[] memory options
     ) public payable nonReentrant whenNotPaused {
+        if (transferSenderWhitelistEnabled && !transferSenders[_msgSender()]) revert Controller_SenderNotWhitelisted();
         if (amount == 0) revert Controller_ZeroAmount();
-        // Fee collection for multi-bridge transfers
-        uint256 fee = feeCollector.quote(amount);
-        if (fee > 0) {
-            IERC20(token).safeTransferFrom(_msgSender(), address(this), fee);
-            IERC20(token).safeApprove(address(feeCollector), fee);
-            feeCollector.collect(token, fee);
-        }
         _burn(_msgSender(), amount);
 
         uint256 _currentLimit = burningCurrentLimitOf(address(0));
@@ -500,10 +510,8 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         ReceivedTransfer storage transfer = receivedTransfers[transferId];
         if (transfer.amount == 0) revert Controller_UnknownTransfer();
         if (transfer.executed) revert Controller_TransferNotExecutable();
-        if (transfer.threshold > 1) {
-            if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
-            if (transfer.threshold < minBridges) revert Controller_Invalid_Params();
-        }
+        if (minBridges == 0) revert Controller_MultiBridgeTransfersDisabled();
+        if (transfer.threshold < minBridges) revert Controller_Invalid_Params();
         if (transfer.receivedSoFar < transfer.threshold) revert Controller_ThresholdNotMet();
         uint256 _currentLimit = mintingCurrentLimitOf(address(0));
         if (_currentLimit < transfer.amount) revert Controller_NotHighEnoughLimits();
@@ -609,6 +617,28 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             multiBridgeAdapters[adapter[i]] = enabled[i];
             emit MultiBridgeAdapterSet(adapter[i], enabled[i]);
         }
+    }
+
+    /**
+     * @notice Sets which addresses are allowed to initiate bridge transfers through transferTo().
+     * @param sender The addresses to update.
+     * @param enabled The whitelist status for each address.
+     */
+    function setTransferSenders(address[] memory sender, bool[] memory enabled) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (sender.length != enabled.length) revert Controller_Invalid_Params();
+        for (uint256 i = 0; i < sender.length; i++) {
+            transferSenders[sender[i]] = enabled[i];
+            emit TransferSenderSet(sender[i], enabled[i]);
+        }
+    }
+
+    /**
+     * @notice Enables or disables transfer sender whitelist enforcement for transferTo().
+     * @param enabled Whether the whitelist should be enforced.
+     */
+    function setTransferSenderWhitelistEnabled(bool enabled) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        transferSenderWhitelistEnabled = enabled;
+        emit TransferSenderWhitelistSet(enabled);
     }
 
     /**

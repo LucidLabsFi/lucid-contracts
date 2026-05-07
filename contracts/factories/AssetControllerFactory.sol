@@ -16,7 +16,7 @@ contract AssetControllerFactory {
     mapping(address => bool) public isDeployed;
 
     /// @notice Deploys a new AssetController contract
-    /// @param addresses Array of addresses: [token, initialOwner, pauser, feeCollector, controllerAddress]
+    /// @param addresses Array of addresses: [token, initialOwner, pauser, controllerAddress]
     /// @param duration The duration of the controller
     /// @param minBridges The minimum number of bridges required
     /// @param multiBridgeAdapters Array of whitelisted multi-bridge adapters
@@ -26,7 +26,7 @@ contract AssetControllerFactory {
     /// @param burningLimits Array of burning limits
     /// @param selectors Array of function selectors for mint and burn functions on the token
     function deployController(
-        address[5] memory addresses, // token, initialOwner, pauser, feeCollector, controllerAddress
+        address[4] memory addresses, // token, initialOwner, pauser, controllerAddress
         uint256 duration,
         uint256 minBridges,
         address[] memory multiBridgeAdapters,

@@ -6,7 +6,7 @@ import {IBaseAdapter} from "../adapters/interfaces/IBaseAdapter.sol";
 
 contract AssetControllerMock is AssetController {
     constructor(
-        address[5] memory _addresses, //token, initialOwner, pauser, feeCollector, controllerAddress
+        address[4] memory _addresses, //token, initialOwner, pauser, controllerAddress
         uint256 _duration,
         uint256 _minBridges,
         address[] memory _multiBridgeAdapters,

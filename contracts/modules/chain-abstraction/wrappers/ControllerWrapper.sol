@@ -78,7 +78,7 @@ contract ControllerWrapper is AccessControl, ReentrancyGuard, Pausable {
     // controller => destChainId => FeeTierConfig
     mapping(address => mapping(uint256 => FeeTierConfig)) private _controllerFeeTiers;
 
-    // Per-destination premium added on top of base (then clamped)
+    // Per-destination premium added on top of base
     mapping(uint256 => uint256) public destChainPremiumRate; // per-destination premium rate
 
     /**

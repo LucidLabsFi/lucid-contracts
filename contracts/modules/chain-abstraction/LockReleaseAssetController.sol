@@ -60,7 +60,7 @@ contract LockReleaseAssetController is AssetController {
      * @notice Initializes the contract with the given parameters.
      * @dev To configure multibridge limits, use the zero address as a bridge in `_bridges` and set the limits accordingly.
      * @param _addresses An array with four elements, containing the token address, the user that gets DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the user getting only PAUSE_ROLE,
-     *          the fee collector contract, the controller address in other chains for the given chain IDs (if deployed with create3).
+     *          and the controller address in other chains for the given chain IDs (if deployed with create3).
      * @param _duration The duration it takes for the limits to fully replenish.
      * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Setting to 0 will disable multi-bridge transfers.
      * @param _multiBridgeAdapters The addresses of the initial bridge adapters that can be used for multi-bridge transfers, bypassing the limits.
@@ -72,7 +72,7 @@ contract LockReleaseAssetController is AssetController {
      * @param _yieldStrategy The address of the initial yield strategy to use. Setting to address(0) means no strategy.
      */
     constructor(
-        address[5] memory _addresses, //token, initialOwner, pauser, feeCollector, controllerAddress
+        address[4] memory _addresses, //token, initialOwner, pauser, controllerAddress
         uint256 _duration,
         uint256 _minBridges,
         address[] memory _multiBridgeAdapters,
