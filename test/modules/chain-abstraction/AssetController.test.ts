@@ -33,9 +33,12 @@ describe("AssetController Tests", () => {
     const multiBridgeFee = 500; // 0.5%
     const relayerFeeThreshold = ethers.utils.parseEther("0.0001");
     const minBridges = 2;
+    const sourceChainId = 31337;
+    const destinationChainId = sourceChainId;
 
     const mintSelector = "0x40c10f19"; // bytes4(keccak256(bytes("mint(address,uint256)")))
     const burnSelector = "0x9dc29fac"; // bytes4(keccak256(bytes("burn(address,uint256)")))
+    const burnSelectorSingle = "0x42966c68"; // bytes4(keccak256(bytes("burn(uint256)")))
     // crosschainMint(address,uint256) // 0x18bf5077
     // crosschainBurn(address,uint256) // 0x2b8c49e3
 
@@ -45,10 +48,18 @@ describe("AssetController Tests", () => {
     // ["resendTransfer(bytes32,address[],uint256[],bytes[])"]
 
     const replenishDuration = 43200; // 12 hours
-    const encodeTransfer = (recipient: string, amount: BigNumber, unwrap: boolean, threshold: number, id: string) =>
+    const encodeTransfer = (
+        nonce: BigNumber | number,
+        destChainId: BigNumber | number,
+        recipient: string,
+        amount: BigNumber,
+        unwrap: boolean,
+        threshold: number,
+        id: string
+    ) =>
         ethers.utils.defaultAbiCoder.encode(
-            ["tuple(address recipient,uint256 amount,bool unwrap,uint256 threshold,bytes32 transferId)"],
-            [{recipient, amount, unwrap, threshold, transferId: id}]
+            ["tuple(uint256 nonce,uint256 destChainId,address recipient,uint256 amount,bool unwrap,uint256 threshold,bytes32 transferId)"],
+            [{nonce, destChainId, recipient, amount, unwrap, threshold, transferId: id}]
         );
 
     beforeEach(async () => {
@@ -56,8 +67,8 @@ describe("AssetController Tests", () => {
         // upgrades.silenceWarnings();
         treasuryAddress = treasury.address;
 
-        // Chain 50 - sourceController, BridgeAdapter
-        // Chain 100 - destController, BridgeAdapter
+        // Chain 31337 - sourceController, BridgeAdapter
+        // Chain 31337 - destController, BridgeAdapter
 
         // Deploy Native Token
         const Token = await ethers.getContractFactory("SimpleTokenOwnable");
@@ -105,7 +116,7 @@ describe("AssetController Tests", () => {
         // Deploy AssetController contract
         const AssetController = await ethers.getContractFactory("AssetControllerMock");
         sourceController = await AssetController.deploy(
-            [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -118,7 +129,7 @@ describe("AssetController Tests", () => {
 
         // Deploy Destination AssetController contract
         destController = await AssetController.deploy(
-            [destToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+            [destToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
             replenishDuration,
             minBridges,
             [],
@@ -141,7 +152,7 @@ describe("AssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [100],
+            [destinationChainId],
             [1000],
             ownerSigner.address
         );
@@ -151,7 +162,7 @@ describe("AssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [100],
+            [destinationChainId],
             [1000],
             ownerSigner.address
         );
@@ -163,7 +174,7 @@ describe("AssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [50],
+            [sourceChainId],
             [500],
             ownerSigner.address
         );
@@ -173,20 +184,20 @@ describe("AssetController Tests", () => {
             relayerFeeThreshold,
             treasuryAddress,
             protocolFee,
-            [50],
+            [sourceChainId],
             [500],
             ownerSigner.address
         );
 
         // After bridge addapters' address is known, set it in the other adapter contract
-        await sourceBridgeAdapter.setTrustedAdapter(100, destBridgeAdapter.address);
-        await destBridgeAdapter.setTrustedAdapter(50, sourceBridgeAdapter.address);
-        await source2BridgeAdapter.setTrustedAdapter(100, dest2BridgeAdapter.address);
-        await dest2BridgeAdapter.setTrustedAdapter(50, source2BridgeAdapter.address);
+        await sourceBridgeAdapter.setTrustedAdapter(destinationChainId, destBridgeAdapter.address);
+        await destBridgeAdapter.setTrustedAdapter(sourceChainId, sourceBridgeAdapter.address);
+        await source2BridgeAdapter.setTrustedAdapter(destinationChainId, dest2BridgeAdapter.address);
+        await dest2BridgeAdapter.setTrustedAdapter(sourceChainId, source2BridgeAdapter.address);
 
         // Call setControllerForChain on Source and Dest Controller to register other Controller contracts
-        await sourceController.setControllerForChain([100], [destController.address]);
-        await destController.setControllerForChain([50], [sourceController.address]);
+        await sourceController.setControllerForChain([destinationChainId], [destController.address]);
+        await destController.setControllerForChain([sourceChainId], [sourceController.address]);
 
         // Set bridge limits
         await sourceController.setLimits(sourceBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
@@ -199,14 +210,14 @@ describe("AssetController Tests", () => {
         await destController.setLimits(ethers.constants.AddressZero, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
 
         // Set domain Id for adapter contract, applycable to Connext adapters
-        await sourceBridgeAdapter.setDomainId([50], [500]);
-        await destBridgeAdapter.setDomainId([100], [1000]);
-        await sourceBridgeAdapter.setDomainId([100], [1000]);
-        await destBridgeAdapter.setDomainId([50], [500]);
-        await source2BridgeAdapter.setDomainId([50], [500]);
-        await dest2BridgeAdapter.setDomainId([100], [1000]);
-        await source2BridgeAdapter.setDomainId([100], [1000]);
-        await dest2BridgeAdapter.setDomainId([50], [500]);
+        await sourceBridgeAdapter.setDomainId([sourceChainId], [500]);
+        await destBridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await sourceBridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await destBridgeAdapter.setDomainId([sourceChainId], [500]);
+        await source2BridgeAdapter.setDomainId([sourceChainId], [500]);
+        await dest2BridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await source2BridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await dest2BridgeAdapter.setDomainId([sourceChainId], [500]);
 
         // set origin domain id in Mock Connext contract
         await connext.setOriginDomainId(sourceBridgeAdapter.address, 500); // domain id of the same chain of source adapter
@@ -225,24 +236,8 @@ describe("AssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             await expect(
                 AssetController.deploy(
-                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [ethers.constants.AddressZero, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     36000,
-                    2,
-                    [],
-                    [],
-                    [],
-                    [],
-                    [],
-                    [mintSelector, burnSelector]
-                )
-            ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
-        });
-        it("should revert if the fee adapter is zero", async () => {
-            const AssetController = await ethers.getContractFactory("AssetController");
-            await expect(
-                AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero, ethers.constants.AddressZero],
-                    3600,
                     2,
                     [],
                     [],
@@ -256,7 +251,7 @@ describe("AssetController Tests", () => {
         it("should set multibridge adapters", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
@@ -272,7 +267,7 @@ describe("AssetController Tests", () => {
         it("should set the controller for chains", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -290,7 +285,7 @@ describe("AssetController Tests", () => {
         //     const AssetController = await ethers.getContractFactory("AssetController");
         //     await expect(
         //         AssetController.deploy(
-        //             [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+        //             [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
         //             3600,
         //             2,
         //             [],
@@ -306,7 +301,7 @@ describe("AssetController Tests", () => {
         //     const AssetController = await ethers.getContractFactory("AssetController");
         //     await expect(
         //         AssetController.deploy(
-        //             [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+        //             [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
         //             3600,
         //             2,
         //             [],
@@ -321,7 +316,7 @@ describe("AssetController Tests", () => {
         it("should set the mint and burn selectors", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ownerSigner.address],
+                [sourceToken.address, ownerSigner.address, pauser.address, ownerSigner.address],
                 3600,
                 2,
                 [],
@@ -338,7 +333,7 @@ describe("AssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -354,7 +349,7 @@ describe("AssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -370,7 +365,7 @@ describe("AssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -386,7 +381,7 @@ describe("AssetController Tests", () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             await expect(
                 AssetController.deploy(
-                    [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                     0,
                     2,
                     [],
@@ -401,7 +396,7 @@ describe("AssetController Tests", () => {
         it("should set limits for bridges", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, ownerSigner.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -418,7 +413,7 @@ describe("AssetController Tests", () => {
         it("should give the PAUSE_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -434,7 +429,7 @@ describe("AssetController Tests", () => {
         it("should give the PAUSE_ROLE to pauser", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -450,7 +445,7 @@ describe("AssetController Tests", () => {
         it("should give the DEFAULT_ADMIN_ROLE to user1", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -466,7 +461,7 @@ describe("AssetController Tests", () => {
         it("should set allowTokenUnwrapping to false", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
-                [sourceToken.address, user1Signer.address, pauser.address, feeCollector.address, ethers.constants.AddressZero],
+                [sourceToken.address, user1Signer.address, pauser.address, ethers.constants.AddressZero],
                 3600,
                 2,
                 [],
@@ -477,6 +472,102 @@ describe("AssetController Tests", () => {
                 [mintSelector, burnSelector]
             );
             expect(await controller.allowTokenUnwrapping()).to.equal(false);
+        });
+    });
+    describe("calculateTransferId", () => {
+        it("should bind the transfer id to nonce and transfer details", async () => {
+            const amount = ethers.utils.parseEther("1");
+            const baseTransferId = await sourceController.calculateTransferId(destinationChainId, 0, user1Signer.address, amount, false, 2);
+
+            expect(await sourceController.calculateTransferId(destinationChainId, 1, user1Signer.address, amount, false, 2)).to.not.equal(
+                baseTransferId
+            );
+            expect(await sourceController.calculateTransferId(destinationChainId, 0, ownerSigner.address, amount, false, 2)).to.not.equal(
+                baseTransferId
+            );
+            expect(await sourceController.calculateTransferId(destinationChainId, 0, user1Signer.address, amount.add(1), false, 2)).to.not.equal(
+                baseTransferId
+            );
+            expect(await sourceController.calculateTransferId(destinationChainId, 0, user1Signer.address, amount, true, 2)).to.not.equal(
+                baseTransferId
+            );
+            expect(await sourceController.calculateTransferId(destinationChainId, 0, user1Signer.address, amount, false, 1)).to.not.equal(
+                baseTransferId
+            );
+        });
+    });
+    describe("transfer sender whitelist", () => {
+        beforeEach(async () => {
+            relayerFee = ethers.utils.parseEther("0.001");
+            amountToBridge = ethers.utils.parseEther("100");
+        });
+        it("should disable whitelist enforcement by default and not whitelist any sender", async () => {
+            expect(await sourceController.transferSenderWhitelistEnabled()).to.equal(false);
+            expect(await sourceController.transferSenders(ownerSigner.address)).to.equal(false);
+            expect(await sourceController.transferSenders(user1Signer.address)).to.equal(false);
+        });
+        it("should revert single-bridge transfers from a non-whitelisted sender when whitelist enforcement is enabled", async () => {
+            await sourceController.setTransferSenderWhitelistEnabled(true);
+            await expect(
+                sourceController.connect(user1Signer)["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    ownerSigner.address,
+                    amountToBridge,
+                    false,
+                    destinationChainId,
+                    sourceBridgeAdapter.address,
+                    bridgeOptions,
+                    {value: relayerFee}
+                )
+            ).to.be.revertedWithCustomError(sourceController, "Controller_SenderNotWhitelisted");
+        });
+        it("should revert multi-bridge transfers from a non-whitelisted sender when whitelist enforcement is enabled", async () => {
+            await sourceController.setTransferSenderWhitelistEnabled(true);
+            await expect(
+                sourceController.connect(user1Signer)["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
+                    ownerSigner.address,
+                    amountToBridge,
+                    false,
+                    destinationChainId,
+                    [sourceBridgeAdapter.address, source2BridgeAdapter.address],
+                    [relayerFee, relayerFee],
+                    [bridgeOptions, bridgeOptions],
+                    {value: relayerFee.mul(2)}
+                )
+            ).to.be.revertedWithCustomError(sourceController, "Controller_SenderNotWhitelisted");
+        });
+        it("should allow a whitelisted sender to transfer when whitelist enforcement is enabled", async () => {
+            await sourceController.setTransferSenderWhitelistEnabled(true);
+            await sourceController.setTransferSenders([user1Signer.address], [true]);
+            await sourceToken.transfer(user1Signer.address, amountToBridge);
+            await sourceToken.connect(user1Signer).approve(sourceController.address, amountToBridge);
+
+            await expect(
+                sourceController.connect(user1Signer)["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    ownerSigner.address,
+                    amountToBridge,
+                    false,
+                    destinationChainId,
+                    sourceBridgeAdapter.address,
+                    bridgeOptions,
+                    {value: relayerFee}
+                )
+            ).to.emit(sourceController, "TransferCreated");
+        });
+        it("should allow any sender to transfer when whitelist enforcement is disabled", async () => {
+            await sourceToken.transfer(user1Signer.address, amountToBridge);
+            await sourceToken.connect(user1Signer).approve(sourceController.address, amountToBridge);
+
+            await expect(
+                sourceController.connect(user1Signer)["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    ownerSigner.address,
+                    amountToBridge,
+                    false,
+                    destinationChainId,
+                    sourceBridgeAdapter.address,
+                    bridgeOptions,
+                    {value: relayerFee}
+                )
+            ).to.emit(sourceController, "TransferCreated");
         });
     });
     describe("transferTo - single bridge", () => {
@@ -493,7 +584,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {value: relayerFee}
@@ -505,7 +596,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {value: relayerFee}
@@ -515,7 +606,7 @@ describe("AssetController Tests", () => {
             const event = (await tx.wait()).events?.find((x: any) => x.event === "TransferCreated")?.args;
             expect(event.amount).to.equal(amountToBridge);
             expect(event.recipient).to.equal(user1Signer.address);
-            expect(event.destChainId).to.equal(100);
+            expect(event.destChainId).to.equal(destinationChainId);
             expect(event.sender).to.equal(ownerSigner.address);
             expect(event.threshold).to.equal(1);
             expect(event.unwrap).to.equal(false);
@@ -525,7 +616,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {value: relayerFee}
@@ -538,7 +629,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -555,7 +646,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -574,7 +665,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -590,7 +681,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -606,7 +697,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -616,13 +707,13 @@ describe("AssetController Tests", () => {
             ).to.be.revertedWith("Pausable: paused");
         });
         it("should revert if transfers to the specific dest chain are paused", async () => {
-            await sourceController.pauseTransfersToChain(100, true);
+            await sourceController.pauseTransfersToChain(destinationChainId, true);
             await expect(
                 sourceController["transferTo(address,uint256,bool,uint256,address,bytes)"](
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -637,7 +728,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     connext.address,
                     bridgeOptions,
                     {
@@ -652,7 +743,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     0,
                     false,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -667,7 +758,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -683,14 +774,14 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {value: relayerFee}
                 );
                 await expect(tx).to.emit(sourceController, "TransferCreated").withArgs(
                     anyValue, // transferId
-                    100,
+                    destinationChainId,
                     1,
                     ownerSigner.address,
                     user1Signer.address,
@@ -698,6 +789,101 @@ describe("AssetController Tests", () => {
                     true // unwrap
                 );
             });
+        });
+    });
+    describe("transferTo - single bridge - burn(uint256)", () => {
+        let singleSelectorToken: Contract;
+        let singleSelectorController: Contract;
+
+        beforeEach(async () => {
+            relayerFee = ethers.utils.parseEther("0.001");
+            amountToBridge = ethers.utils.parseEther("100");
+
+            const XERC20 = await ethers.getContractFactory("XERC20Votes");
+            singleSelectorToken = await XERC20.deploy(
+                "Single Selector Token",
+                "SST",
+                [ownerSigner.address],
+                [ethers.utils.parseEther("100000")],
+                ownerSigner.address,
+                treasury.address,
+                [ethers.utils.parseEther("5"), ethers.utils.parseEther("500")],
+                [100, 200]
+            );
+
+            const AssetController = await ethers.getContractFactory("AssetControllerMock");
+            singleSelectorController = await AssetController.deploy(
+                [singleSelectorToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
+                replenishDuration,
+                minBridges,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [mintSelector, burnSelectorSingle]
+            );
+
+            await singleSelectorController.setControllerForChain([destinationChainId], [destController.address]);
+            await singleSelectorController.setLimits(sourceBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
+            await singleSelectorToken.setLimits(singleSelectorController.address, ethers.utils.parseEther("10000"), ethers.utils.parseEther("10000"));
+            await singleSelectorToken.connect(ownerSigner).approve(singleSelectorController.address, amountToBridge);
+        });
+
+        it("should burn the tokens and leave no residue in the controller", async () => {
+            const controllerBalanceBefore = await singleSelectorToken.balanceOf(singleSelectorController.address);
+
+            await singleSelectorController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                user1Signer.address,
+                amountToBridge,
+                false,
+                destinationChainId,
+                sourceBridgeAdapter.address,
+                bridgeOptions,
+                {
+                    value: relayerFee,
+                }
+            );
+
+            const controllerBalanceAfter = await singleSelectorToken.balanceOf(singleSelectorController.address);
+            expect(controllerBalanceBefore).to.equal(0);
+            expect(controllerBalanceAfter).to.equal(0);
+        });
+
+        it("should revert if burn(uint256) succeeds without reducing the controller balance", async () => {
+            const NoOpBurnToken = await ethers.getContractFactory("NoOpBurnTokenMock");
+            const noOpBurnToken = await NoOpBurnToken.deploy();
+
+            const AssetController = await ethers.getContractFactory("AssetControllerMock");
+            const noOpController = await AssetController.deploy(
+                [noOpBurnToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
+                replenishDuration,
+                minBridges,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [mintSelector, burnSelectorSingle]
+            );
+
+            await noOpController.setControllerForChain([destinationChainId], [destController.address]);
+            await noOpController.setLimits(sourceBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
+            await noOpBurnToken.connect(ownerSigner).approve(noOpController.address, amountToBridge);
+
+            await expect(
+                noOpController["transferTo(address,uint256,bool,uint256,address,bytes)"](
+                    user1Signer.address,
+                    amountToBridge,
+                    false,
+                    destinationChainId,
+                    sourceBridgeAdapter.address,
+                    bridgeOptions,
+                    {
+                        value: relayerFee,
+                    }
+                )
+            ).to.be.revertedWithCustomError(noOpController, "Controller_TokenBurnFailed");
         });
     });
     describe("resendTransfer - single bridge", () => {
@@ -711,7 +897,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -745,13 +931,12 @@ describe("AssetController Tests", () => {
             ).to.be.revertedWithCustomError(sourceController, "Controller_UnknownTransfer");
         });
         it("should revert if it's a multi-bridge transfer", async () => {
-            const amountToBridgePlusFees = amountToBridge.mul(multiBridgeFee).div(100000).add(amountToBridge);
-            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridgePlusFees);
+            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge);
             const tx = await sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -774,7 +959,7 @@ describe("AssetController Tests", () => {
                 sourceController["resendTransfer(bytes32,address,bytes)"](transferId, connext.address, bridgeOptions, {
                     value: relayerFee,
                 })
-            ).to.be.revertedWithCustomError(sourceController, "Controller_NotHighEnoughLimits");
+            ).to.be.revertedWithCustomError(sourceController, "Controller_AdapterNotSupported");
         });
         it("should emit a TransferRelayed event", async () => {
             const tx = await sourceController["resendTransfer(bytes32,address,bytes)"](transferId, source2BridgeAdapter.address, bridgeOptions, {
@@ -798,8 +983,7 @@ describe("AssetController Tests", () => {
             relayerFee = ethers.utils.parseEther("0.001");
             amountToBridge = ethers.utils.parseEther("100");
             // Approval needs to be given because controller will burn the tokens
-            const amountToBridgePlusFees = amountToBridge.mul(multiBridgeFee).div(100000).add(amountToBridge);
-            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridgePlusFees);
+            await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge);
         });
         it("should revert if msg.value > sum of the fees", async () => {
             await expect(
@@ -807,7 +991,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -823,7 +1007,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, sourceBridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -838,7 +1022,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                sourceChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -849,31 +1033,10 @@ describe("AssetController Tests", () => {
             const event = (await tx.wait()).events?.find((x: any) => x.event === "TransferCreated")?.args;
             expect(event.amount).to.be.equal(amountToBridge);
             expect(event.recipient).to.be.equal(ownerSigner.address);
-            expect(event.destChainId).to.be.equal(100);
+            expect(event.destChainId).to.be.equal(destinationChainId);
             expect(event.sender).to.be.equal(ownerSigner.address);
             expect(event.threshold).to.be.equal(2);
             expect(event.unwrap).to.be.equal(false);
-        });
-        it("should emit a TransferCreated event with the full amount if no fee has been taken", async () => {
-            await feeCollector.setFeeBps(0); // turn off fee collection
-            const tx = await sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
-                ownerSigner.address,
-                amountToBridge,
-                false,
-                100,
-                [sourceBridgeAdapter.address, source2BridgeAdapter.address],
-                [relayerFee, relayerFee],
-                [bridgeOptions, bridgeOptions],
-                {
-                    value: relayerFee.mul(2),
-                }
-            );
-            await expect(tx).to.emit(sourceController, "TransferCreated");
-
-            const receipt = await tx.wait();
-            const event = receipt.events?.find((x: any) => x.event === "TransferCreated");
-            const amount = event?.args?.amount;
-            expect(amount).to.be.equal(amountToBridge);
         });
         it("should increase the nonce ", async () => {
             const nonceBefore = await sourceController.nonce();
@@ -881,7 +1044,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -898,7 +1061,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -916,7 +1079,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -933,7 +1096,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -944,13 +1107,13 @@ describe("AssetController Tests", () => {
             ).to.be.revertedWith("Pausable: paused");
         });
         it("should revert if transfers to the specific dest chain are paused", async () => {
-            await sourceController.pauseTransfersToChain(100, true);
+            await sourceController.pauseTransfersToChain(destinationChainId, true);
             await expect(
                 sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -966,7 +1129,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     0,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -976,13 +1139,13 @@ describe("AssetController Tests", () => {
                 )
             ).to.be.revertedWithCustomError(sourceController, "Controller_ZeroAmount");
         });
-        it("should burn the tokens, deducting the fee for the transfer", async () => {
+        it("should burn only the bridged amount", async () => {
             const userBalanceBefore = await sourceToken.balanceOf(ownerSigner.address);
             await sourceController["transferTo(address,uint256,bool,uint256,address[],uint256[],bytes[])"](
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -990,12 +1153,10 @@ describe("AssetController Tests", () => {
                     value: relayerFee.mul(2),
                 }
             );
-            const multiBridgeFeeAmount = BigNumber.from(amountToBridge.mul(multiBridgeFee).div(100000));
             const userBalanceAfter = await sourceToken.balanceOf(ownerSigner.address);
-            expect(userBalanceBefore.sub(userBalanceAfter)).to.be.equal(amountToBridge.add(multiBridgeFeeAmount));
+            expect(userBalanceBefore.sub(userBalanceAfter)).to.be.equal(amountToBridge);
         });
-        it("should forward the full multi-bridge fee to treasury and not strand fees in the controller", async () => {
-            const feeAmount = await feeCollector.quote(amountToBridge);
+        it("should not transfer tokens to treasury or strand them in the controller", async () => {
             const treasuryBalanceBefore = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceBefore = await sourceToken.balanceOf(sourceController.address);
 
@@ -1003,7 +1164,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -1014,7 +1175,7 @@ describe("AssetController Tests", () => {
 
             const treasuryBalanceAfter = await sourceToken.balanceOf(treasuryAddress);
             const controllerBalanceAfter = await sourceToken.balanceOf(sourceController.address);
-            expect(treasuryBalanceAfter.sub(treasuryBalanceBefore)).to.be.equal(feeAmount);
+            expect(treasuryBalanceAfter).to.be.equal(treasuryBalanceBefore);
             expect(controllerBalanceAfter).to.be.equal(controllerBalanceBefore);
         });
         it("should revert if the adapters provided are less than minBridges", async () => {
@@ -1023,7 +1184,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address],
                     [relayerFee],
                     [bridgeOptions],
@@ -1040,7 +1201,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -1072,7 +1233,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee],
                     [bridgeOptions],
@@ -1088,7 +1249,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address],
                     [relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -1104,7 +1265,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     false,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, destBridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -1120,7 +1281,7 @@ describe("AssetController Tests", () => {
                     ownerSigner.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                     [relayerFee, relayerFee],
                     [bridgeOptions, bridgeOptions],
@@ -1148,7 +1309,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -1274,7 +1435,7 @@ describe("AssetController Tests", () => {
                 ownerSigner.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -1349,7 +1510,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                sourceChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -1362,20 +1523,22 @@ describe("AssetController Tests", () => {
             transferId = msgCreatedEvent?.args?.transferId;
         });
         it("revert if originSender is not registered as a controller in originChain", async () => {
-            await destController.setControllerForChain([50], [ethers.constants.AddressZero]);
+            await destController.setControllerForChain([sourceChainId], [ethers.constants.AddressZero]);
             await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_Invalid_Params");
         });
         it("should revert if originChain is not configured", async () => {
-            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, amountToBridge, false, 1, transferId);
             await expect(destController.receiveMessage(forgedTransfer, 999, ethers.constants.AddressZero)).to.be.revertedWithCustomError(
                 destController,
                 "Controller_Invalid_Params"
             );
         });
         it("should revert if a single-bridge caller is not approved", async () => {
-            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, amountToBridge, false, 1, transferId);
             await expect(
-                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, sourceChainId, sourceController.address)
             ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
 
             const receivedTransfer = await destController.receivedTransfers(transferId);
@@ -1383,10 +1546,50 @@ describe("AssetController Tests", () => {
             expect(receivedTransfer.receivedSoFar).to.be.equal(0);
             expect(receivedTransfer.executed).to.be.equal(false);
         });
+        it("should reject a trusted single-bridge delivery if the payload no longer matches the transfer id", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, BigNumber.from(0), false, 1, transferId);
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+
+            const forgedRequestId = await connext.counter();
+            await expect(connext.callXReceive(forgedRequestId)).to.be.revertedWithCustomError(destController, "Controller_InvalidTransferId");
+        });
+        it("should reject a trusted single-bridge delivery that targets a different destination chain", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const wrongDestChainId = sourceChainId + 1;
+            const forgedTransferId = await sourceController.calculateTransferId(
+                wrongDestChainId,
+                relayedTransfer.nonce,
+                relayedTransfer.recipient,
+                relayedTransfer.amount,
+                relayedTransfer.unwrap,
+                relayedTransfer.threshold
+            );
+            const forgedTransfer = encodeTransfer(
+                relayedTransfer.nonce,
+                wrongDestChainId,
+                relayedTransfer.recipient,
+                relayedTransfer.amount,
+                relayedTransfer.unwrap,
+                relayedTransfer.threshold,
+                forgedTransferId
+            );
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+
+            const forgedRequestId = await connext.counter();
+            await expect(connext.callXReceive(forgedRequestId)).to.be.revertedWithCustomError(destController, "Controller_InvalidTransferId");
+        });
         it("should reject a poison attempt and still allow the legitimate single-bridge delivery", async () => {
-            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 1, transferId);
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, amountToBridge, false, 1, transferId);
             await expect(
-                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, sourceChainId, sourceController.address)
             ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
 
             await connext.callXReceive(1);
@@ -1431,14 +1634,14 @@ describe("AssetController Tests", () => {
             const receivedTransfer = await destController.receivedTransfers(transferId);
             expect(receivedTransfer.amount).to.be.equal(amountToBridge);
             expect(receivedTransfer.recipient).to.be.equal(user1Signer.address);
-            expect(receivedTransfer.originChainId).to.be.equal(50);
+            expect(receivedTransfer.originChainId).to.be.equal(sourceChainId);
             expect(receivedTransfer.receivedSoFar).to.be.equal(1);
             expect(receivedTransfer.threshold).to.be.equal(1);
             expect(receivedTransfer.executed).to.be.equal(true);
         });
         it("should emit an TransferReceived event", async () => {
             const tx = await connext.callXReceive(1);
-            await expect(tx).to.emit(destController, "TransferReceived").withArgs(transferId, 50, destBridgeAdapter.address);
+            await expect(tx).to.emit(destController, "TransferReceived").withArgs(transferId, sourceChainId, destBridgeAdapter.address);
         });
     });
     describe("receiveMessage - single bridge - unwrap", () => {
@@ -1459,7 +1662,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                100,
+                sourceChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -1481,16 +1684,27 @@ describe("AssetController Tests", () => {
             expect(userNativeBalanceAfter).to.be.equal(amountToBridge.add(userNativeBalanceBefore).sub(bridgeTax));
             expect(userDestTokenBalanceAfter).to.be.equal(userDestTokenBalanceBefore); // dest token balance should remain the same
         });
-        it("should mint xerc20 tokens if the lockbox address is not set", async () => {
+        it("should deliver xerc20 and keep controller unstuck if lockbox is removed after unwrapping is enabled", async () => {
+            // Unwrapping is enabled in beforeEach with a valid non-native lockbox.
+            // Then governance removes the lockbox before message delivery.
             await destToken.setLockbox(ethers.constants.AddressZero);
+
             const bridgeTax = await destToken.calculateBridgeTax(amountToBridge);
             const userNativeBalanceBefore = await nativeToken.balanceOf(user1Signer.address);
             const userBalanceBefore = await destToken.balanceOf(user1Signer.address);
+            const controllerBalanceBefore = await destToken.balanceOf(destController.address);
+
             await connext.callXReceive(1);
+
             const userNativeBalanceAfter = await nativeToken.balanceOf(user1Signer.address);
             const userBalanceAfter = await destToken.balanceOf(user1Signer.address);
+            const controllerBalanceAfter = await destToken.balanceOf(destController.address);
+            const receivedTransfer = await destController.receivedTransfers(transferId);
+
             expect(userBalanceAfter).to.be.equal(amountToBridge.add(userBalanceBefore).sub(bridgeTax));
-            expect(userNativeBalanceAfter).to.be.equal(userNativeBalanceBefore); // native token balance should remain the same
+            expect(userNativeBalanceAfter).to.be.equal(userNativeBalanceBefore);
+            expect(controllerBalanceAfter).to.be.equal(controllerBalanceBefore);
+            expect(receivedTransfer.executed).to.be.equal(true);
         });
     });
     describe("receiveMessage - multi bridge", () => {
@@ -1505,7 +1719,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                sourceChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -1518,7 +1732,7 @@ describe("AssetController Tests", () => {
             transferId = msgCreatedEvent?.args?.transferId;
         });
         it("revert if originSender is not registered as a controller in originChain", async () => {
-            await destController.setControllerForChain([50], [ethers.constants.AddressZero]);
+            await destController.setControllerForChain([sourceChainId], [ethers.constants.AddressZero]);
             await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_Invalid_Params");
         });
         it("should revert if the multibridge adapter that delivered the message is not registered", async () => {
@@ -1526,9 +1740,10 @@ describe("AssetController Tests", () => {
             await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
         });
         it("should revert if a multi-bridge caller is not approved", async () => {
-            const forgedTransfer = encodeTransfer(user1Signer.address, BigNumber.from(0), false, 2, transferId);
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, amountToBridge, false, 2, transferId);
             await expect(
-                destController.connect(user1Signer).receiveMessage(forgedTransfer, 50, sourceController.address)
+                destController.connect(user1Signer).receiveMessage(forgedTransfer, sourceChainId, sourceController.address)
             ).to.be.revertedWithCustomError(destController, "Controller_AdapterNotSupported");
 
             const receivedTransfer = await destController.receivedTransfers(transferId);
@@ -1551,10 +1766,105 @@ describe("AssetController Tests", () => {
 
             await expect(connext.callXReceive(2)).to.be.revertedWithCustomError(destController, "Controller_TransferResentByAadapter");
         });
+        it("should revert if local multi-bridge transfers are disabled", async () => {
+            await destController.setMinBridges(0);
+            await expect(connext.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_MultiBridgeTransfersDisabled");
+        });
         it("should mark the transfer as delivered by the specific adapter", async () => {
             await connext.callXReceive(1);
             const deliveredBy = await destController.deliveredBy(transferId, destBridgeAdapter.address);
             expect(deliveredBy).to.be.equal(true);
+        });
+        it("should reject a trusted multi-bridge delivery if the payload no longer matches the transfer id", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, BigNumber.from(0), false, 2, transferId);
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+
+            const forgedRequestId = await connext.counter();
+            await expect(connext.callXReceive(forgedRequestId)).to.be.revertedWithCustomError(destController, "Controller_InvalidTransferId");
+        });
+        it("should reject a trusted multi-bridge delivery that tries to lower the threshold under the same transfer id", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransfer = encodeTransfer(relayedTransfer.nonce, sourceChainId, user1Signer.address, amountToBridge, false, 1, transferId);
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+
+            const forgedRequestId = await connext.counter();
+            await expect(connext.callXReceive(forgedRequestId)).to.be.revertedWithCustomError(destController, "Controller_InvalidTransferId");
+        });
+        it("should reject a trusted multi-bridge delivery that targets a different destination chain", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const wrongDestChainId = sourceChainId + 1;
+            const forgedTransferId = await sourceController.calculateTransferId(
+                wrongDestChainId,
+                relayedTransfer.nonce,
+                relayedTransfer.recipient,
+                relayedTransfer.amount,
+                relayedTransfer.unwrap,
+                relayedTransfer.threshold
+            );
+            const forgedTransfer = encodeTransfer(
+                relayedTransfer.nonce,
+                wrongDestChainId,
+                relayedTransfer.recipient,
+                relayedTransfer.amount,
+                relayedTransfer.unwrap,
+                relayedTransfer.threshold,
+                forgedTransferId
+            );
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+
+            const forgedRequestId = await connext.counter();
+            await expect(connext.callXReceive(forgedRequestId)).to.be.revertedWithCustomError(destController, "Controller_InvalidTransferId");
+        });
+        it("should keep forged multi-bridge variants isolated and still allow the honest transfer to execute", async () => {
+            const relayedTransfer = await sourceController.relayedTransfers(transferId);
+            const forgedTransferId = await sourceController.calculateTransferId(
+                sourceChainId,
+                relayedTransfer.nonce,
+                user1Signer.address,
+                BigNumber.from(0),
+                false,
+                2
+            );
+            const forgedTransfer = encodeTransfer(
+                relayedTransfer.nonce,
+                sourceChainId,
+                user1Signer.address,
+                BigNumber.from(0),
+                false,
+                2,
+                forgedTransferId
+            );
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+            await connext.callXReceive(await connext.counter());
+
+            const forgedReceipt = await destController.receivedTransfers(forgedTransferId);
+            expect(forgedReceipt.amount).to.be.equal(0);
+            expect(forgedReceipt.receivedSoFar).to.be.equal(1);
+            expect(forgedReceipt.threshold).to.be.equal(2);
+            expect(forgedReceipt.executed).to.be.equal(false);
+
+            await connext.callXReceive(1);
+            await connext2.callXReceive(1);
+
+            const honestReceipt = await destController.receivedTransfers(transferId);
+            expect(honestReceipt.amount).to.be.equal(amountToBridge);
+            expect(honestReceipt.receivedSoFar).to.be.equal(2);
+
+            await expect(destController.execute(transferId)).to.not.be.reverted;
+            expect((await destController.receivedTransfers(forgedTransferId)).executed).to.be.equal(false);
         });
         describe("receiveMessage - first receipt", () => {
             beforeEach(async () => {});
@@ -1566,7 +1876,7 @@ describe("AssetController Tests", () => {
                 const receivedTransfer = await destController.receivedTransfers(transferId);
                 expect(receivedTransfer.amount).to.be.equal(amountToBridge);
                 expect(receivedTransfer.recipient).to.be.equal(user1Signer.address);
-                expect(receivedTransfer.originChainId).to.be.equal(50);
+                expect(receivedTransfer.originChainId).to.be.equal(sourceChainId);
                 expect(receivedTransfer.receivedSoFar).to.be.equal(1);
                 expect(receivedTransfer.threshold).to.be.equal(2);
                 expect(receivedTransfer.executed).to.be.equal(false);
@@ -1588,7 +1898,7 @@ describe("AssetController Tests", () => {
                 const receivedTransfer = await destController.receivedTransfers(transferId);
                 expect(receivedTransfer.amount).to.be.equal(amountToBridge);
                 expect(receivedTransfer.recipient).to.be.equal(user1Signer.address);
-                expect(receivedTransfer.originChainId).to.be.equal(50);
+                expect(receivedTransfer.originChainId).to.be.equal(sourceChainId);
                 expect(receivedTransfer.receivedSoFar).to.be.equal(2);
                 expect(receivedTransfer.threshold).to.be.equal(2);
                 expect(receivedTransfer.executed).to.be.equal(false);
@@ -1615,7 +1925,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 false,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -1650,6 +1960,11 @@ describe("AssetController Tests", () => {
             await connext2.callXReceive(1);
             await destController.execute(transferId);
             await expect(destController.execute(transferId)).to.be.revertedWithCustomError(destController, "Controller_TransferNotExecutable");
+        });
+        it("should revert if local multi-bridge transfers are disabled before execution", async () => {
+            await connext2.callXReceive(1);
+            await destController.setMinBridges(0);
+            await expect(destController.execute(transferId)).to.be.revertedWithCustomError(destController, "Controller_MultiBridgeTransfersDisabled");
         });
         it("should reduce the available burn limit", async () => {
             await connext2.callXReceive(1);
@@ -1705,7 +2020,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                100,
+                destinationChainId,
                 [sourceBridgeAdapter.address, source2BridgeAdapter.address],
                 [relayerFee, relayerFee],
                 [bridgeOptions, bridgeOptions],
@@ -1761,7 +2076,7 @@ describe("AssetController Tests", () => {
                 user1Signer.address,
                 amountToBridge,
                 true,
-                100,
+                destinationChainId,
                 sourceBridgeAdapter.address,
                 bridgeOptions,
                 {
@@ -1803,7 +2118,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -1815,13 +2130,8 @@ describe("AssetController Tests", () => {
                 const msgCreatedEvent = receipt.events?.find((x: any) => x.event === "TransferCreated");
                 transferId = msgCreatedEvent?.args?.transferId;
             });
-            it("should transfer the xerc20 instead of reverting", async () => {
-                // enable token unwrapping in destination
-                await destController.setTokenUnwrapping(true);
-                const userBalanceBefore = await mockToken.balanceOf(user1Signer.address);
-                await connext.callXReceive(1);
-                const userBalanceAfter = await mockToken.balanceOf(user1Signer.address);
-                expect(userBalanceAfter).to.be.equal(amountToBridge.add(userBalanceBefore));
+            it("should revert when enabling unwrapping", async () => {
+                await expect(destController.setTokenUnwrapping(true)).to.be.revertedWithCustomError(destController, "Controller_Invalid_Params");
             });
         });
         describe("lockbox() returns zero address", () => {
@@ -1840,7 +2150,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -1852,16 +2162,10 @@ describe("AssetController Tests", () => {
                 const msgCreatedEvent = receipt.events?.find((x: any) => x.event === "TransferCreated");
                 transferId = msgCreatedEvent?.args?.transferId;
             });
-            it("should transfer the xerc20 instead of reverting", async () => {
+            it("should revert when enabling unwrapping", async () => {
                 // change lockbox address to zero
                 await destToken.setLockbox(ethers.constants.AddressZero);
-                // enable token unwrapping in destination
-                await destController.setTokenUnwrapping(true);
-                const userBalanceBefore = await destToken.balanceOf(user1Signer.address);
-                const bridgeTax = await destToken.calculateBridgeTax(amountToBridge);
-                await connext.callXReceive(1);
-                const userBalanceAfter = await destToken.balanceOf(user1Signer.address);
-                expect(userBalanceAfter).to.be.equal(amountToBridge.add(userBalanceBefore).sub(bridgeTax));
+                await expect(destController.setTokenUnwrapping(true)).to.be.revertedWithCustomError(destController, "Controller_Invalid_Params");
             });
         });
         describe("lockbox has no ERC20 variable", () => {
@@ -1885,7 +2189,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -1928,7 +2232,7 @@ describe("AssetController Tests", () => {
                     user1Signer.address,
                     amountToBridge,
                     true,
-                    100,
+                    destinationChainId,
                     sourceBridgeAdapter.address,
                     bridgeOptions,
                     {
@@ -2044,9 +2348,51 @@ describe("AssetController Tests", () => {
             await expect(tx).to.emit(destController, "MultiBridgeAdapterSet").withArgs(destBridgeAdapter.address, true);
         });
     });
+    describe("setTransferSenders", () => {
+        it("should revert if the caller is not the owner", async () => {
+            await expect(destController.connect(user1Signer).setTransferSenders([user1Signer.address], [true])).to.be.reverted;
+        });
+        it("should set transfer sender whitelist entries", async () => {
+            await destController.connect(ownerSigner).setTransferSenders([user1Signer.address], [true]);
+            expect(await destController.transferSenders(user1Signer.address)).to.equal(true);
+        });
+        it("should revert if the arrays are not the same length", async () => {
+            await expect(destController.connect(ownerSigner).setTransferSenders([user1Signer.address], [true, false])).to.be.revertedWithCustomError(
+                destController,
+                "Controller_Invalid_Params"
+            );
+        });
+        it("should emit a TransferSenderSet event", async () => {
+            const tx = await destController.connect(ownerSigner).setTransferSenders([user1Signer.address], [true]);
+            await expect(tx).to.emit(destController, "TransferSenderSet").withArgs(user1Signer.address, true);
+        });
+    });
+    describe("setTransferSenderWhitelistEnabled", () => {
+        it("should revert if the caller is not the owner", async () => {
+            await expect(destController.connect(user1Signer).setTransferSenderWhitelistEnabled(false)).to.be.reverted;
+        });
+        it("should set whitelist enforcement", async () => {
+            await destController.connect(ownerSigner).setTransferSenderWhitelistEnabled(false);
+            expect(await destController.transferSenderWhitelistEnabled()).to.equal(false);
+        });
+        it("should emit a TransferSenderWhitelistSet event", async () => {
+            const tx = await destController.connect(ownerSigner).setTransferSenderWhitelistEnabled(false);
+            await expect(tx).to.emit(destController, "TransferSenderWhitelistSet").withArgs(false);
+        });
+    });
     describe("setTokenUnwrapping", () => {
         it("should revert if the caller is not the owner", async () => {
             await expect(destController.connect(user1Signer).setTokenUnwrapping(true)).to.be.reverted;
+        });
+        it("should revert when enabling unwrapping with a native lockbox", async () => {
+            const Lockbox = await ethers.getContractFactory("XERC20Lockbox");
+            const nativeLockbox = await Lockbox.deploy(destToken.address, nativeToken.address, true);
+            await destToken.setLockbox(nativeLockbox.address);
+
+            await expect(destController.connect(ownerSigner).setTokenUnwrapping(true)).to.be.revertedWithCustomError(
+                destController,
+                "Controller_Invalid_Params"
+            );
         });
         it("should set the minBridges", async () => {
             await destController.connect(ownerSigner).setTokenUnwrapping(true);
