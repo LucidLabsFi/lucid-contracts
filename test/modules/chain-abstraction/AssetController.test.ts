@@ -248,6 +248,38 @@ describe("AssetController Tests", () => {
                 )
             ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
         });
+        it("should revert if owner address is zero", async () => {
+            const AssetController = await ethers.getContractFactory("AssetController");
+            await expect(
+                AssetController.deploy(
+                    [sourceToken.address, ethers.constants.AddressZero, pauser.address, ethers.constants.AddressZero],
+                    36000,
+                    2,
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    [mintSelector, burnSelector]
+                )
+            ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
+        });
+        it("should revert if minBridges is 1", async () => {
+            const AssetController = await ethers.getContractFactory("AssetController");
+            await expect(
+                AssetController.deploy(
+                    [sourceToken.address, ownerSigner.address, pauser.address, ethers.constants.AddressZero],
+                    3600,
+                    1,
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    [mintSelector, burnSelector]
+                )
+            ).to.be.revertedWithCustomError(AssetController, "Controller_Invalid_Params");
+        });
         it("should set multibridge adapters", async () => {
             const AssetController = await ethers.getContractFactory("AssetController");
             const controller = await AssetController.deploy(
@@ -1608,6 +1640,29 @@ describe("AssetController Tests", () => {
 
             await expect(connext2.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_TransferNotExecutable");
         });
+        it("should reject replay for executed single-bridge transfers even when amount is zero", async () => {
+            const forgedNonce = 777777;
+            const zeroAmount = BigNumber.from(0);
+            const forgedTransferId = await sourceController.calculateTransferId(
+                sourceChainId,
+                forgedNonce,
+                user1Signer.address,
+                zeroAmount,
+                false,
+                1
+            );
+            const forgedTransfer = encodeTransfer(forgedNonce, sourceChainId, user1Signer.address, zeroAmount, false, 1, forgedTransferId);
+
+            await sourceController.relayArbitraryMessage(sourceBridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+            await connext.callXReceive(2);
+
+            await sourceController.relayArbitraryMessage(source2BridgeAdapter.address, sourceChainId, bridgeOptions, forgedTransfer, {
+                value: relayerFee,
+            });
+            await expect(connext2.callXReceive(1)).to.be.revertedWithCustomError(destController, "Controller_TransferNotExecutable");
+        });
         it("should revert if the contract is paused", async () => {
             await destController.pause();
             await expect(connext.callXReceive(1)).to.be.revertedWith("Pausable: paused");
@@ -2301,6 +2356,12 @@ describe("AssetController Tests", () => {
         it("should revert if the caller is not the owner", async () => {
             await expect(destController.connect(user1Signer).setMinBridges(2)).to.be.reverted;
         });
+        it("should revert if minBridges is set to 1", async () => {
+            await expect(destController.connect(ownerSigner).setMinBridges(1)).to.be.revertedWithCustomError(
+                destController,
+                "Controller_Invalid_Params"
+            );
+        });
         it("should set the minBridges", async () => {
             await destController.connect(ownerSigner).setMinBridges(10);
             expect(await destController.minBridges()).to.equal(10);
@@ -2438,6 +2499,11 @@ describe("AssetController Tests", () => {
 
             const contractBalance = await ethers.provider.getBalance(sourceController.address);
             expect(contractBalance).to.equal(0);
+        });
+        it("should emit a Withdrawal event", async () => {
+            const amount = await ethers.provider.getBalance(sourceController.address);
+            const tx = await sourceController.connect(ownerSigner).withdraw(user1Signer.address);
+            await expect(tx).to.emit(sourceController, "Withdrawal").withArgs(user1Signer.address, amount);
         });
     });
     describe("grantRole", () => {

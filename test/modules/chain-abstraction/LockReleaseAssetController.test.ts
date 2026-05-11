@@ -18,9 +18,12 @@ describe("LockReleaseAssetController Tests", () => {
     let sourceController: Contract;
     let destController: Contract;
     let connext: Contract;
+    let connext2: Contract;
     let relayerFee: BigNumber;
     let sourceBridgeAdapter: Contract;
     let destBridgeAdapter: Contract;
+    let source2BridgeAdapter: Contract;
+    let dest2BridgeAdapter: Contract;
     let amountToBridge: any;
     let transferId: string;
     let bridgeOptions: any;
@@ -67,6 +70,7 @@ describe("LockReleaseAssetController Tests", () => {
         // Deploy Mock connext contract
         const Connext = await ethers.getContractFactory("ConnextMock");
         connext = await Connext.deploy();
+        connext2 = await Connext.deploy();
 
         // Deploy FeeCollector contract
         const FeeCollector = await ethers.getContractFactory("FeeCollector");
@@ -130,10 +134,33 @@ describe("LockReleaseAssetController Tests", () => {
             [500],
             ownerSigner.address
         );
+        source2BridgeAdapter = await BridgeAdapter.deploy(
+            connext2.address,
+            "Connext Adapter 2",
+            relayerFeeThreshold,
+            treasuryAddress,
+            protocolFee,
+            [destinationChainId],
+            [1000],
+            ownerSigner.address
+        );
+
+        dest2BridgeAdapter = await BridgeAdapter.deploy(
+            connext2.address,
+            "Connext Adapter 2",
+            relayerFeeThreshold,
+            treasuryAddress,
+            protocolFee,
+            [sourceChainId],
+            [500],
+            ownerSigner.address
+        );
 
         // After bridge addapters' address is known, set it in the other adapter contract
         await sourceBridgeAdapter.setTrustedAdapter(destinationChainId, destBridgeAdapter.address);
         await destBridgeAdapter.setTrustedAdapter(sourceChainId, sourceBridgeAdapter.address);
+        await source2BridgeAdapter.setTrustedAdapter(destinationChainId, dest2BridgeAdapter.address);
+        await dest2BridgeAdapter.setTrustedAdapter(sourceChainId, source2BridgeAdapter.address);
 
         // Call setControllerForChain on Source and Dest Controller to register other Controller contracts
         await sourceController.setControllerForChain([destinationChainId], [destController.address]);
@@ -142,6 +169,8 @@ describe("LockReleaseAssetController Tests", () => {
         // Set bridge limits
         await sourceController.setLimits(sourceBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
         await destController.setLimits(destBridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
+        await sourceController.setLimits(source2BridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
+        await destController.setLimits(dest2BridgeAdapter.address, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
 
         // Set bridge limits for whitelisted multiBridge adapters
         await sourceController.setLimits(ethers.constants.AddressZero, ethers.utils.parseEther("1000"), ethers.utils.parseEther("1000"));
@@ -152,14 +181,20 @@ describe("LockReleaseAssetController Tests", () => {
         await destBridgeAdapter.setDomainId([destinationChainId], [1000]);
         await sourceBridgeAdapter.setDomainId([destinationChainId], [1000]);
         await destBridgeAdapter.setDomainId([sourceChainId], [500]);
+        await source2BridgeAdapter.setDomainId([sourceChainId], [500]);
+        await dest2BridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await source2BridgeAdapter.setDomainId([destinationChainId], [1000]);
+        await dest2BridgeAdapter.setDomainId([sourceChainId], [500]);
 
         // set origin domain id in Mock Connext contract
         await connext.setOriginDomainId(sourceBridgeAdapter.address, 500); // domain id of the same chain of source adapter
         await connext.setOriginDomainId(destBridgeAdapter.address, 1000); // domain id of the same chain of dest adapter
+        await connext2.setOriginDomainId(source2BridgeAdapter.address, 500); // domain id of the same chain of source adapter
+        await connext2.setOriginDomainId(dest2BridgeAdapter.address, 1000); // domain id of the same chain of dest adapter
 
         // Set unlimited controllers in AssetController
-        await sourceController.setMultiBridgeAdapters([sourceBridgeAdapter.address], [true]);
-        await destController.setMultiBridgeAdapters([destBridgeAdapter.address], [true]);
+        await sourceController.setMultiBridgeAdapters([sourceBridgeAdapter.address, source2BridgeAdapter.address], [true, true]);
+        await destController.setMultiBridgeAdapters([destBridgeAdapter.address, dest2BridgeAdapter.address], [true, true]);
 
         bridgeOptions = ethers.utils.defaultAbiCoder.encode(["address"], [user1Signer.address]);
     });
@@ -496,7 +531,7 @@ describe("LockReleaseAssetController Tests", () => {
         beforeEach(async () => {
             relayerFee = ethers.utils.parseEther("0.001");
             amountToBridge = ethers.utils.parseEther("100");
-            await sourceController.setMinBridges(1);
+            await sourceController.setMinBridges(2);
             await sourceToken.connect(ownerSigner).approve(sourceController.address, amountToBridge);
         });
         it("should not transfer tokens to treasury and should only lock the bridged amount", async () => {
@@ -508,11 +543,11 @@ describe("LockReleaseAssetController Tests", () => {
                 amountToBridge,
                 false,
                 destinationChainId,
-                [sourceBridgeAdapter.address],
-                [relayerFee],
-                [bridgeOptions],
+                [sourceBridgeAdapter.address, source2BridgeAdapter.address],
+                [relayerFee, relayerFee],
+                [bridgeOptions, bridgeOptions],
                 {
-                    value: relayerFee,
+                    value: relayerFee.mul(2),
                 }
             );
 

@@ -18,7 +18,7 @@ contract AssetControllerFactory {
     /// @notice Deploys a new AssetController contract
     /// @param addresses Array of addresses: [token, initialOwner, pauser, controllerAddress]
     /// @param duration The duration of the controller
-    /// @param minBridges The minimum number of bridges required
+    /// @param minBridges The minimum number of bridges required (0 disables multi-bridge mode, values >= 2 enable it)
     /// @param multiBridgeAdapters Array of whitelisted multi-bridge adapters
     /// @param chainId Array of chain IDs
     /// @param bridges Array of bridge addresses
