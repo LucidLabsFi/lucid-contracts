@@ -82,6 +82,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /// @param enabled Whether the whitelist is enforced.
     event TransferSenderWhitelistSet(bool enabled);
 
+    /// @notice Event emitted when a withdrawal of the contract balance is made.
+    /// @param recipient The address of the recipient.
+    /// @param amount The amount withdrawn.
+    event Withdrawal(address indexed recipient, uint256 amount);
+
     /// @notice Event emitted when the controller address for a chain is set.
     /// @param controller The address of the controller.
     /// @param chainId The chain ID.
@@ -215,7 +220,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      * @param _addresses An array with four elements, containing the token address, the user that gets DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the user getting only PAUSE_ROLE,
      *          and the controller address in other chains for the given chain IDs (if deployed with create3).
      * @param _duration The duration it takes for the limits to fully replenish.
-     * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Setting to 0 will disable multi-bridge transfers.
+     * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Set to 0 to disable multi-bridge mode, or to at least 2 to enable it.
      * @param _multiBridgeAdapters The addresses of the initial bridge adapters that can be used for multi-bridge transfers, bypassing the limits.
      * @param _chainId The list of chain IDs to set the controller addresses for.
      * @param _bridges The list of bridge adapter addresses that have limits set for minting and burning.
@@ -235,6 +240,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
         bytes4[2] memory _selectors
     ) BaseAssetBridge(_addresses[1], _addresses[2], _duration, _bridges, _mintingLimits, _burningLimits) {
         if (_addresses[0] == address(0)) revert Controller_Invalid_Params();
+        if (_minBridges == 1) revert Controller_Invalid_Params();
         token = _addresses[0];
         minBridges = _minBridges;
         emit MinBridgesSet(_minBridges);
@@ -265,6 +271,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
     /**
      * @notice Sends a message to another chain via a bridgeAdapter to mint the asset.
+     * @notice Asset transfers are not cancellable or refundable by users after the source-side burn/lock.
      * @dev msg.value should contain the bridge adapter fee
      * @param recipient The address of the recipient. Could be the same as msg.sender.
      * @param amount The amount of the asset to mint.
@@ -333,6 +340,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
     /**
      * @notice Sends a message to another chain via multiple bridgeAdapter to mint the asset, bypassing the individual bridge limits.
      * @notice This function uses instead higher limits, since execution goes through a minimum number of bridges.
+     * @notice Asset transfers are not cancellable or refundable by users after the source-side burn/lock.
      * @notice Msg.sender will receive any refunds from excess fees paid by the bridge, if the bridge supports it.
      * @dev Token allowance must be given before calling this function, which should include the multi-bridge fee, if any.
      * @param recipient The address of the recipient. Could be the same as msg.sender.
@@ -441,7 +449,7 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
             if (mintingMaxLimitOf(msg.sender) == 0) revert Controller_AdapterNotSupported();
             // Instant transfer using the bridge limits
             // Check that transfer hasn't been replayed
-            if (receivedTransfers[transfer.transferId].amount != 0) revert Controller_TransferNotExecutable();
+            if (receivedTransfers[transfer.transferId].executed) revert Controller_TransferNotExecutable();
             receivedTransfers[transfer.transferId] = ReceivedTransfer({
                 recipient: transfer.recipient,
                 amount: transfer.amount,
@@ -597,10 +605,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
 
     /**
      * @notice Sets the minimum number of bridges required to relay an asset for multi-bridge transfers.
-     * @dev Setting to 0 will disable multi-bridge transfers.
+     * @dev Set to 0 to disable multi-bridge mode, or to at least 2 to enable it.
      * @param _minBridges The minimum number of bridges required.
      */
     function setMinBridges(uint256 _minBridges) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_minBridges == 1) revert Controller_Invalid_Params();
         minBridges = _minBridges;
         emit MinBridgesSet(_minBridges);
     }
@@ -648,9 +657,11 @@ contract AssetController is Context, BaseAssetBridge, ReentrancyGuard, IControll
      */
     function withdraw(address payable recipient) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (recipient == address(0)) revert Controller_Invalid_Params();
+        uint256 amount = address(this).balance;
 
-        (bool success, ) = recipient.call{value: address(this).balance}("");
+        (bool success, ) = recipient.call{value: amount}("");
         if (!success) revert Controller_EtherTransferFailed();
+        emit Withdrawal(recipient, amount);
     }
 
     /* ========== INTERNAL ========== */

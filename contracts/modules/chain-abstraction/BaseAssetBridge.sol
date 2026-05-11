@@ -91,6 +91,7 @@ abstract contract BaseAssetBridge is AccessControl, Pausable {
         uint256[] memory _mintingLimits,
         uint256[] memory _burningLimits
     ) {
+        if (_owner == address(0)) revert Controller_Invalid_Params();
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
         _setupRole(PAUSE_ROLE, _owner);
         _grantRole(PAUSE_ROLE, _pauser);

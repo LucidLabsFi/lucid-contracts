@@ -62,7 +62,7 @@ contract LockReleaseAssetController is AssetController {
      * @param _addresses An array with four elements, containing the token address, the user that gets DEFAULT_ADMIN_ROLE and PAUSE_ROLE, the user getting only PAUSE_ROLE,
      *          and the controller address in other chains for the given chain IDs (if deployed with create3).
      * @param _duration The duration it takes for the limits to fully replenish.
-     * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Setting to 0 will disable multi-bridge transfers.
+     * @param _minBridges The minimum number of bridges required to relay an asset for multi-bridge transfers. Set to 0 to disable multi-bridge mode, or to at least 2 to enable it.
      * @param _multiBridgeAdapters The addresses of the initial bridge adapters that can be used for multi-bridge transfers, bypassing the limits.
      * @param _chainId The list of chain IDs to set the controller addresses for.
      * @param _bridges The list of bridge adapter addresses that have limits set for minting and burning.
